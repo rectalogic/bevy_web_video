@@ -11,7 +11,10 @@ bevy = { version = "0.16.1", features = ["webgpu"] }
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.77"
 wasm-bindgen = "0.2.100"
-web-sys = { version = "0.3.77", features = ["HtmlVideoElement"] }
+web-sys = { version = "0.3.77", features = [
+    "HtmlVideoElement",
+    "HtmlMediaElement",
+] }
 # Keep in sync with bevy
 # https://github.com/bevyengine/bevy/issues/11079
 wgpu-types = "24.0.0"

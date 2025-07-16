@@ -9,6 +9,7 @@ use bevy::{
         renderer::RenderQueue,
         texture::GpuImage,
     },
+    window::WindowResolution,
 };
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlVideoElement;
@@ -24,7 +25,9 @@ pub fn start(video: HtmlVideoElement) {
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                canvas: Some("#canvas".into()),
+                canvas: Some("#bevy-canvas".into()),
+                // https://github.com/bevyengine/bevy/issues/20164
+                resolution: WindowResolution::new(800.0, 800.0),
                 ..default()
             }),
             ..default()
@@ -63,7 +66,7 @@ fn setup(
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::RENDER_WORLD,
     );
-    image.texture_descriptor.usage |= TextureUsages::STORAGE_BINDING;
+    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
     let image_handle = images.add(image);
     commands.spawn((
         WebVideo {

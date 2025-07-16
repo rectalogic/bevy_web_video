@@ -15,16 +15,17 @@
                 },
                 false,
             );
+            video.play();
         </script>
     </head>
     <body>
-        <canvas id="canvas" width="1280" height="720"></canvas>
+        <canvas id="bevy-canvas"></canvas>
         <video
             id="video"
-            autoplay
+            style="display: none"
+            playsinline
+            muted
             crossorigin="anonymous"
-            width="640"
-            height="360"
             src="https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4"
         ></video>
     </body>
