@@ -2,7 +2,7 @@ use bevy::{
     asset::RenderAssetUsages,
     prelude::*,
     render::{
-        MainWorld, Render, RenderApp, RenderSet,
+        Render, RenderApp, RenderSet,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_asset::RenderAssets,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
@@ -31,12 +31,12 @@ pub fn start(video: HtmlVideoElement) {
         }),
         ExtractComponentPlugin::<WebVideo>::default(),
     ))
-    .insert_non_send_resource(video)
+    .insert_non_send_resource(video.clone())
     .add_systems(Startup, setup);
 
-    app.sub_app_mut(RenderApp)
-        .add_systems(ExtractSchedule, extract_video_element)
-        .add_systems(Render, render_video.in_set(RenderSet::PrepareResources));
+    let render_app = app.sub_app_mut(RenderApp);
+    render_app.world_mut().insert_non_send_resource(video);
+    render_app.add_systems(Render, render_video.in_set(RenderSet::PrepareResources));
 
     app.run();
 }
@@ -50,11 +50,11 @@ struct WebVideo {
 fn setup(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
-    video: NonSend<HtmlVideoElement>,
+    video_element: NonSend<HtmlVideoElement>,
 ) {
     let size = Extent3d {
-        width: video.video_width(),
-        height: video.video_height(),
+        width: video_element.video_width(),
+        height: video_element.video_height(),
         ..default()
     };
     let mut image = Image::new_uninit(
@@ -73,14 +73,6 @@ fn setup(
         Sprite::from_image(image_handle),
     ));
     commands.spawn(Camera2d);
-}
-
-fn extract_video_element(mut world: ResMut<MainWorld>) {
-    let Some(video_element) = world.get_non_send_resource::<HtmlVideoElement>() else {
-        return;
-    };
-    let video_element = video_element.clone();
-    world.insert_non_send_resource(video_element);
 }
 
 fn render_video(
