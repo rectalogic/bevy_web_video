@@ -1246,7 +1246,6 @@ name = "bevy_web_video"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "console_error_panic_hook",
  "js-sys",
  "wasm-bindgen",
  "web-sys",
@@ -1781,6 +1780,16 @@ checksum = "46f93780a459b7d656ef7f071fe699c4d3d2cb201c4b24d085b6ddc505276e73"
 dependencies = [
  "nix 0.30.1",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "cubes"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_web_video",
+ "console_error_panic_hook",
+ "wasm-bindgen",
 ]
 
 [[package]]
