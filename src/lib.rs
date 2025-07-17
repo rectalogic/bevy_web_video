@@ -25,6 +25,7 @@ pub struct WebVideoPlugin;
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<RemoveWebVideo>()
+            .add_event::<AddWebVideo>()
             .init_non_send_resource::<VideoElements>()
             .add_systems(Update, (handle_play_tasks, update_video_elements));
     }
@@ -41,7 +42,7 @@ impl Plugin for WebVideoPlugin {
 }
 
 #[derive(Component)]
-#[component(on_despawn = remove_webvideo_hook, on_remove = remove_webvideo_hook, on_replace = remove_webvideo_hook)]
+#[component(on_add = add_webvideo_hook, on_despawn = remove_webvideo_hook, on_remove = remove_webvideo_hook, on_replace = replace_webvideo_hook)]
 pub struct WebVideo {
     url: String,
     image_id: AssetId<Image>,
@@ -51,13 +52,15 @@ pub struct WebVideo {
 pub struct PlayVideoTask(Task<Result<()>>);
 
 #[derive(Event)]
+struct AddWebVideo(Entity);
+
+#[derive(Event)]
 struct RemoveWebVideo(Entity);
 
 #[derive(Clone)]
 struct VideoElement {
     element: HtmlVideoElement,
     image_id: AssetId<Image>,
-    initialized: bool,
     playing: bool,
 }
 
@@ -87,8 +90,17 @@ impl WebVideo {
     }
 }
 
+fn add_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
+    world.send_event(AddWebVideo(context.entity));
+}
+
 fn remove_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
     world.send_event(RemoveWebVideo(context.entity));
+}
+
+fn replace_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
+    world.send_event(RemoveWebVideo(context.entity));
+    world.send_event(AddWebVideo(context.entity));
 }
 
 fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElement> {
@@ -106,8 +118,8 @@ fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElem
 fn update_video_elements(
     mut commands: Commands,
     mut videos_removed: EventReader<RemoveWebVideo>,
-    videos: Query<(Entity, &WebVideo)>,
-    mut images: ResMut<Assets<Image>>,
+    mut videos_added: EventReader<AddWebVideo>,
+    videos: Query<&WebVideo>,
     mut video_elements: NonSendMut<VideoElements>,
 ) {
     for event in videos_removed.read() {
@@ -116,60 +128,49 @@ fn update_video_elements(
             .remove::<(WebVideo, PlayVideoTask)>();
         video_elements.remove(&event.0);
     }
+    if videos_added.is_empty() {
+        return;
+    }
     let document = web_sys::window()
         .expect("window")
         .document()
         .expect("document");
-    for (entity, video) in videos.iter() {
-        match video_elements.get_mut(&entity) {
-            Some(video_element) => {
-                if !video_element.initialized
-                    && video_element.element.ready_state()
-                        >= web_sys::HtmlMediaElement::HAVE_METADATA
-                {
-                    if let Some(image) = images.get_mut(video.image_id) {
-                        image.texture_descriptor.size.width = video_element.element.video_width();
-                        image.texture_descriptor.size.height = video_element.element.video_height();
-                        image.asset_usage = RenderAssetUsages::RENDER_WORLD;
-                        video_element.initialized = true;
-                    }
-                }
+    for event in videos_added.read() {
+        let Ok(video) = videos.get(event.0) else {
+            continue;
+        };
+        let Ok(video_element) = create_video(&document, &video.url)
+            .inspect_err(|err| warn!("Failed to create video: {err}"))
+        else {
+            continue;
+        };
+        let Ok(promise) = video_element
+            .play()
+            .inspect_err(|err| warn!("Failed to play video: {err:?}"))
+        else {
+            continue;
+        };
+        let task = AsyncComputeTaskPool::get().spawn(async move {
+            match wasm_bindgen_futures::JsFuture::from(promise).await {
+                Ok(_) => Ok(()),
+                Err(err) => Err(format!("Failed to play video: {err:?}").into()),
             }
-            None => {
-                let Ok(video_element) = create_video(&document, &video.url)
-                    .inspect_err(|err| warn!("Failed to create video: {err}"))
-                else {
-                    continue;
-                };
-                let Ok(promise) = video_element
-                    .play()
-                    .inspect_err(|err| warn!("Failed to play video: {err:?}"))
-                else {
-                    continue;
-                };
-                let task = AsyncComputeTaskPool::get().spawn(async move {
-                    match wasm_bindgen_futures::JsFuture::from(promise).await {
-                        Ok(_) => Ok(()),
-                        Err(err) => Err(format!("Failed to play video: {err:?}").into()),
-                    }
-                });
-                commands.entity(entity).insert(PlayVideoTask(task));
-                video_elements.insert(
-                    entity,
-                    VideoElement {
-                        element: video_element,
-                        image_id: video.image_id,
-                        initialized: false,
-                        playing: false,
-                    },
-                );
-            }
-        }
+        });
+        commands.entity(event.0).insert(PlayVideoTask(task));
+        video_elements.insert(
+            event.0,
+            VideoElement {
+                element: video_element,
+                image_id: video.image_id,
+                playing: false,
+            },
+        );
     }
 }
 
 fn handle_play_tasks(
     mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
     mut play_tasks: Query<(Entity, &mut PlayVideoTask)>,
     mut video_elements: NonSendMut<VideoElements>,
 ) {
@@ -177,7 +178,12 @@ fn handle_play_tasks(
         if let Some(result) = block_on(future::poll_once(&mut task.0)) {
             match result {
                 Ok(_) => {
-                    if let Some(video_element) = video_elements.get_mut(&entity) {
+                    if let Some(video_element) = video_elements.get_mut(&entity)
+                        && let Some(image) = images.get_mut(video_element.image_id)
+                    {
+                        image.texture_descriptor.size.width = video_element.element.video_width();
+                        image.texture_descriptor.size.height = video_element.element.video_height();
+                        image.asset_usage = RenderAssetUsages::RENDER_WORLD;
                         video_element.playing = true;
                     }
                 }
