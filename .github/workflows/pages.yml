@@ -29,11 +29,11 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Build
         run: |
-          mkdir -p examples/cubes/web/webgpu examples/cubes/web/webgl2
+          mkdir -p examples/cubes/web/webgpu/pkg examples/cubes/web/webgl2/pkg
           cp examples/cubes/index.html examples/cubes/web/webgpu
           cp examples/cubes/index.html examples/cubes/web/webgl2
-          wasm-pack build --target web examples/cubes --out-dir web/webgpu --features webgpu
-          wasm-pack build --target web examples/cubes --out-dir web/webgl2
+          wasm-pack build --target web examples/cubes --out-dir web/webgpu/pkg --features webgpu
+          wasm-pack build --target web examples/cubes --out-dir web/webgl2/pkg
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
