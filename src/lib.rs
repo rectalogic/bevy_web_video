@@ -4,8 +4,7 @@ use bevy::{
     asset::RenderAssetUsages,
     prelude::*,
     render::{
-        Extract, MainWorld, Render, RenderApp, RenderSet,
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        Extract, Render, RenderApp, RenderSet,
         render_asset::RenderAssets,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
         renderer::RenderQueue,
@@ -25,33 +24,39 @@ pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ExtractComponentPlugin::<WebVideo>::default());
+        app.init_non_send_resource::<VideoElements>()
+            .add_systems(Update, update_video_elements);
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         render_app
             .world_mut()
-            .insert_non_send_resource(VideoElements);
+            .init_non_send_resource::<RenderVideoElements>();
         render_app
-            .add_systems(ExtractSchedule, extract_videos)
+            .add_systems(ExtractSchedule, extract_video_elements)
             .add_systems(Render, render_videos.in_set(RenderSet::PrepareResources));
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Component, ExtractComponent)]
+#[derive(Clone, PartialEq, Eq, Hash, Component)]
 pub struct WebVideo {
     url: String,
     image_id: AssetId<Image>,
 }
 
+#[derive(Clone)]
 struct VideoElement {
     element: HtmlVideoElement,
+    image_id: AssetId<Image>,
     initialized: bool,
 }
 
-#[derive(Default, Deref, DerefMut)]
-struct VideoElements(HashMap<WebVideo, VideoElement>);
+#[derive(Default, Clone, Deref, DerefMut)]
+struct VideoElements(HashMap<Entity, VideoElement>);
+
+#[derive(Default, Clone, Deref, DerefMut)]
+struct RenderVideoElements(Vec<VideoElement>);
 
 impl WebVideo {
     pub fn new_with_image(url: &str, mut images: ResMut<Assets<Image>>) -> (Self, Handle<Image>) {
@@ -87,20 +92,17 @@ fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElem
     Ok(video_element)
 }
 
-fn extract_videos(
-    mut main_world: ResMut<MainWorld>,
-    videos: Extract<Query<&WebVideo>>,
+fn update_video_elements(
+    videos: Query<(Entity, &WebVideo)>,
+    mut images: ResMut<Assets<Image>>,
     mut video_elements: NonSendMut<VideoElements>,
-) -> Result<()> {
-    let Some(mut images) = main_world.get_resource_mut::<Assets<Image>>() else {
-        return Err("Assets<Image> not found".into());
-    };
+) {
     let document = web_sys::window()
         .expect("window")
         .document()
         .expect("document");
-    for video in videos.iter() {
-        match video_elements.get_mut(video) {
+    for (entity, video) in videos.iter() {
+        match video_elements.get_mut(&entity) {
             Some(video_element) => {
                 if !video_element.initialized
                     && video_element.element.ready_state()
@@ -123,26 +125,32 @@ fn extract_videos(
                     }
                 };
                 video_elements.insert(
-                    video.clone(),
+                    entity,
                     VideoElement {
                         element: video_element,
+                        image_id: video.image_id,
                         initialized: false,
                     },
                 );
             }
         }
     }
-    Ok(())
+}
+
+fn extract_video_elements(
+    video_elements: Extract<NonSend<VideoElements>>,
+    mut render_video_elements: NonSendMut<RenderVideoElements>,
+) {
+    render_video_elements.0 = video_elements.values().cloned().collect();
 }
 
 fn render_videos(
-    // videos: Query<&WebVideo>,
-    video_elements: NonSend<VideoElements>,
+    render_video_elements: NonSend<RenderVideoElements>,
     queue: Res<RenderQueue>,
     images: Res<RenderAssets<GpuImage>>,
 ) {
-    for (video, video_element) in video_elements.iter() {
-        let Some(gpu_image) = images.get(video.image_id) else {
+    for video_element in render_video_elements.iter() {
+        let Some(gpu_image) = images.get(video_element.image_id) else {
             continue;
         };
         queue.copy_external_image_to_texture(

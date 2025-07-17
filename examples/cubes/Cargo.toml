@@ -14,6 +14,3 @@ bevy_web_video = { path = "../.." }
 bevy = { workspace = true }
 wasm-bindgen = { workspace = true }
 console_error_panic_hook = "0.1.7"
-
-[profile.release]
-opt-level = "s"
