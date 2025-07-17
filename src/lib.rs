@@ -35,7 +35,8 @@ pub fn start(video: HtmlVideoElement) {
         ExtractComponentPlugin::<WebVideo>::default(),
     ))
     .insert_non_send_resource(video.clone())
-    .add_systems(Startup, setup);
+    .add_systems(Startup, setup)
+    .add_systems(Update, update);
 
     let render_app = app.sub_app_mut(RenderApp);
     render_app.world_mut().insert_non_send_resource(video);
@@ -52,6 +53,8 @@ struct WebVideo {
 
 fn setup(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     video_element: NonSend<HtmlVideoElement>,
 ) {
@@ -73,9 +76,19 @@ fn setup(
             image_id: image_handle.id(),
             size,
         },
-        Sprite::from_image(image_handle),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(image_handle)),
     ));
-    commands.spawn(Camera2d);
+    commands.spawn((PointLight::default(), Transform::from_xyz(3.0, 3.0, 2.0)));
+    commands.spawn((Camera3d::default(), Transform::from_xyz(0., 0., 2.)));
+}
+
+fn update(mut videos: Query<&mut Transform, With<WebVideo>>, time: Res<Time>) {
+    for mut transform in videos.iter_mut() {
+        transform.rotate_x(time.delta_secs() * 0.8);
+        transform.rotate_z(time.delta_secs() * 0.25);
+        transform.rotate_y(time.delta_secs() * 0.5);
+    }
 }
 
 fn render_video(
