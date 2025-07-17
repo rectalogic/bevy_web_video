@@ -46,6 +46,7 @@ impl Plugin for WebVideoPlugin {
 pub struct WebVideo {
     url: String,
     image_id: AssetId<Image>,
+    looping: bool,
 }
 
 #[derive(Component)]
@@ -71,7 +72,11 @@ struct VideoElements(HashMap<Entity, VideoElement>);
 struct RenderVideoElements(Vec<VideoElement>);
 
 impl WebVideo {
-    pub fn new_with_image(url: &str, mut images: ResMut<Assets<Image>>) -> (Self, Handle<Image>) {
+    pub fn new_with_image(
+        url: &str,
+        mut images: ResMut<Assets<Image>>,
+        looping: bool,
+    ) -> (Self, Handle<Image>) {
         let mut image = Image::new_uninit(
             Extent3d::default(),
             TextureDimension::D2,
@@ -84,6 +89,7 @@ impl WebVideo {
             Self {
                 url: url.into(),
                 image_id: image_handle.id(),
+                looping,
             },
             image_handle,
         )
@@ -103,15 +109,16 @@ fn replace_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
     world.send_event(AddWebVideo(context.entity));
 }
 
-fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElement> {
+fn create_video(document: &web_sys::Document, video: &WebVideo) -> Result<HtmlVideoElement> {
     let video_element = document
         .create_element("video")
         .map_err(|err| format!("{err:?}"))?
         .dyn_into::<web_sys::HtmlVideoElement>()
         .map_err(|err| format!("{err:?}"))?;
     video_element.set_cross_origin(Some("anonymous"));
-    video_element.set_src(url);
+    video_element.set_src(&video.url);
     video_element.set_muted(true);
+    video_element.set_loop(video.looping);
     Ok(video_element)
 }
 
@@ -139,7 +146,7 @@ fn update_video_elements(
         let Ok(video) = videos.get(event.0) else {
             continue;
         };
-        let Ok(video_element) = create_video(&document, &video.url)
+        let Ok(video_element) = create_video(&document, video)
             .inspect_err(|err| warn!("Failed to create video: {err}"))
         else {
             continue;

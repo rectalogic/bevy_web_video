@@ -31,6 +31,7 @@ fn setup(
     let (video, image_handle) = WebVideo::new_with_image(
         "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4",
         images,
+        true,
     );
     commands.spawn((
         video,
