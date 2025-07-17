@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{
     asset::RenderAssetUsages,
+    ecs::{component::HookContext, world::DeferredWorld},
     prelude::*,
     render::{
         Extract, Render, RenderApp, RenderSet,
@@ -10,6 +11,7 @@ use bevy::{
         renderer::RenderQueue,
         texture::GpuImage,
     },
+    tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
 };
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlVideoElement;
@@ -18,14 +20,13 @@ use wgpu_types::{
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
 
-//XXX need to remove entry from HashMap when WebVideo component is removed/despawned
-
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        app.init_non_send_resource::<VideoElements>()
-            .add_systems(Update, update_video_elements);
+        app.add_event::<RemoveWebVideo>()
+            .init_non_send_resource::<VideoElements>()
+            .add_systems(Update, (handle_play_tasks, update_video_elements));
     }
 
     fn finish(&self, app: &mut App) {
@@ -39,17 +40,25 @@ impl Plugin for WebVideoPlugin {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Component)]
+#[derive(Component)]
+#[component(on_despawn = remove_webvideo_hook, on_remove = remove_webvideo_hook, on_replace = remove_webvideo_hook)]
 pub struct WebVideo {
     url: String,
     image_id: AssetId<Image>,
 }
+
+#[derive(Component)]
+pub struct PlayVideoTask(Task<Result<()>>);
+
+#[derive(Event)]
+struct RemoveWebVideo(Entity);
 
 #[derive(Clone)]
 struct VideoElement {
     element: HtmlVideoElement,
     image_id: AssetId<Image>,
     initialized: bool,
+    playing: bool,
 }
 
 #[derive(Default, Clone, Deref, DerefMut)]
@@ -78,6 +87,10 @@ impl WebVideo {
     }
 }
 
+fn remove_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
+    world.send_event(RemoveWebVideo(context.entity));
+}
+
 fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElement> {
     let video_element = document
         .create_element("video")
@@ -87,16 +100,22 @@ fn create_video(document: &web_sys::Document, url: &str) -> Result<HtmlVideoElem
     video_element.set_cross_origin(Some("anonymous"));
     video_element.set_src(url);
     video_element.set_muted(true);
-    //XXX await the Promise?
-    let _ = video_element.play().unwrap();
     Ok(video_element)
 }
 
 fn update_video_elements(
+    mut commands: Commands,
+    mut videos_removed: EventReader<RemoveWebVideo>,
     videos: Query<(Entity, &WebVideo)>,
     mut images: ResMut<Assets<Image>>,
     mut video_elements: NonSendMut<VideoElements>,
 ) {
+    for event in videos_removed.read() {
+        commands
+            .entity(event.0)
+            .remove::<(WebVideo, PlayVideoTask)>();
+        video_elements.remove(&event.0);
+    }
     let document = web_sys::window()
         .expect("window")
         .document()
@@ -117,22 +136,57 @@ fn update_video_elements(
                 }
             }
             None => {
-                let video_element = match create_video(&document, &video.url) {
-                    Ok(video_element) => video_element,
-                    Err(err) => {
-                        warn!("Failed to create video: {err}");
-                        continue;
-                    }
+                let Ok(video_element) = create_video(&document, &video.url)
+                    .inspect_err(|err| warn!("Failed to create video: {err}"))
+                else {
+                    continue;
                 };
+                let Ok(promise) = video_element
+                    .play()
+                    .inspect_err(|err| warn!("Failed to play video: {err:?}"))
+                else {
+                    continue;
+                };
+                let task = AsyncComputeTaskPool::get().spawn(async move {
+                    match wasm_bindgen_futures::JsFuture::from(promise).await {
+                        Ok(_) => Ok(()),
+                        Err(err) => Err(format!("Failed to play video: {err:?}").into()),
+                    }
+                });
+                commands.entity(entity).insert(PlayVideoTask(task));
                 video_elements.insert(
                     entity,
                     VideoElement {
                         element: video_element,
                         image_id: video.image_id,
                         initialized: false,
+                        playing: false,
                     },
                 );
             }
+        }
+    }
+}
+
+fn handle_play_tasks(
+    mut commands: Commands,
+    mut play_tasks: Query<(Entity, &mut PlayVideoTask)>,
+    mut video_elements: NonSendMut<VideoElements>,
+) {
+    for (entity, mut task) in &mut play_tasks {
+        if let Some(result) = block_on(future::poll_once(&mut task.0)) {
+            match result {
+                Ok(_) => {
+                    if let Some(video_element) = video_elements.get_mut(&entity) {
+                        video_element.playing = true;
+                    }
+                }
+                Err(err) => {
+                    warn!("{err}");
+                    video_elements.remove(&entity);
+                }
+            }
+            commands.entity(entity).remove::<PlayVideoTask>();
         }
     }
 }
@@ -150,6 +204,9 @@ fn render_videos(
     images: Res<RenderAssets<GpuImage>>,
 ) {
     for video_element in render_video_elements.iter() {
+        if !video_element.playing {
+            continue;
+        };
         let Some(gpu_image) = images.get(video_element.image_id) else {
             continue;
         };
