@@ -42,7 +42,7 @@ impl Plugin for WebVideoPlugin {
 }
 
 #[derive(Component)]
-#[component(on_add = add_webvideo_hook, on_despawn = remove_webvideo_hook, on_remove = remove_webvideo_hook, on_replace = replace_webvideo_hook)]
+#[component(on_add = add_webvideo_hook, on_despawn = remove_webvideo_hook, on_remove = remove_webvideo_hook, on_replace = add_webvideo_hook)]
 pub struct WebVideo {
     url: String,
     image_id: AssetId<Image>,
@@ -104,11 +104,6 @@ fn remove_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
     world.send_event(RemoveWebVideo(context.entity));
 }
 
-fn replace_webvideo_hook(mut world: DeferredWorld, context: HookContext) {
-    world.send_event(RemoveWebVideo(context.entity));
-    world.send_event(AddWebVideo(context.entity));
-}
-
 fn create_video(document: &web_sys::Document, video: &WebVideo) -> Result<HtmlVideoElement> {
     let video_element = document
         .create_element("video")
@@ -130,9 +125,9 @@ fn update_video_elements(
     mut video_elements: NonSendMut<VideoElements>,
 ) {
     for event in videos_removed.read() {
-        commands
-            .entity(event.0)
-            .remove::<(WebVideo, PlayVideoTask)>();
+        if let Ok(mut entity) = commands.get_entity(event.0) {
+            entity.remove::<(WebVideo, PlayVideoTask)>();
+        }
         video_elements.remove(&event.0);
     }
     if videos_added.is_empty() {

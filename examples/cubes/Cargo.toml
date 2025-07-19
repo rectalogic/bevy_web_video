@@ -11,6 +11,6 @@ webgpu = ["bevy_web_video/webgpu"]
 
 [dependencies]
 bevy_web_video = { path = "../.." }
-bevy = { workspace = true }
+bevy = { workspace = true, default-features = true }
 wasm-bindgen = { workspace = true }
 console_error_panic_hook = "0.1.7"
