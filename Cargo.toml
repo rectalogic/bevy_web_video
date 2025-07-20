@@ -2,7 +2,7 @@
 members = ["examples/cubes"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [workspace.dependencies]
@@ -12,6 +12,10 @@ bevy = { version = "0.16.1", default-features = false, features = [
     "webgl2",
 ] }
 wasm-bindgen = "0.2.100"
+web-sys = { version = "0.3.77", features = [
+    "HtmlVideoElement",
+    "HtmlMediaElement",
+] }
 
 [package]
 name = "bevy_web_video"
@@ -26,13 +30,11 @@ webgpu = ["bevy/webgpu"]
 
 [dependencies]
 bevy = { workspace = true }
+crossbeam-channel = "0.5.15"
 js-sys = "0.3.77"
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = "0.4.50"
-web-sys = { version = "0.3.77", features = [
-    "HtmlVideoElement",
-    "HtmlMediaElement",
-] }
+web-sys = { workspace = true }
 # Keep in sync with bevy
 # https://github.com/bevyengine/bevy/issues/11079
 wgpu-types = "24.0.0"

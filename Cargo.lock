@@ -1243,9 +1243,10 @@ dependencies = [
 
 [[package]]
 name = "bevy_web_video"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
+ "crossbeam-channel",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1785,12 +1786,13 @@ dependencies = [
 
 [[package]]
 name = "cubes"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_web_video",
  "console_error_panic_hook",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
