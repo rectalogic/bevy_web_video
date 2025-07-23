@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::WindowResolution};
-use bevy_web_video::{WebVideo, WebVideoError, WebVideoPlugin};
+use bevy_web_video::{WebVideoError, WebVideoPlugin, WebVideoRegistry};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -24,12 +24,12 @@ pub fn start() {
 
 fn setup(
     mut commands: Commands,
-    webvideo: Res<WebVideo>,
+    video_registry: Res<WebVideoRegistry>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     images: Res<Assets<Image>>,
 ) -> Result<()> {
-    let (image_handle, video) = webvideo.new_video_texture(images)?;
+    let (image_handle, video) = video_registry.new_video_texture(images)?;
     video.set_cross_origin(Some("anonymous"));
     video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
     video.set_muted(true);

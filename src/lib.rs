@@ -23,7 +23,7 @@ pub struct WebVideoPlugin;
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
         let (tx, rx) = unbounded();
-        app.insert_resource(WebVideo { rx, tx })
+        app.insert_resource(WebVideoRegistry { rx, tx })
             .add_systems(Update, (remove_unused_video_elements, handle_resize));
     }
 
@@ -45,9 +45,14 @@ struct VideoElement {
 }
 
 #[derive(Resource)]
-pub struct WebVideo {
+pub struct WebVideoRegistry {
     rx: crossbeam_channel::Receiver<VideoSizeMessage>,
     tx: crossbeam_channel::Sender<VideoSizeMessage>,
+}
+
+#[derive(Clone, Component)]
+pub struct WebVideo {
+    asset_id: AssetId<Image>,
 }
 
 #[derive(Debug)]
@@ -58,8 +63,14 @@ pub struct WebVideoError {
 #[derive(Copy, Clone)]
 struct VideoSizeMessage(AssetId<Image>);
 
+#[derive(Copy, Clone, Event)]
+pub struct ResizeVideoEvent {
+    pub asset_id: AssetId<Image>,
+    pub width: u32,
+    pub height: u32,
+}
 
-impl WebVideo {
+impl WebVideoRegistry {
     pub fn new_video_texture(
         &self,
         images: Res<Assets<Image>>,
@@ -117,23 +128,38 @@ impl WebVideo {
         Ok((image_handle, html_video_element))
     }
 
-    pub fn get_video_element(
-        &self,
-        asset_id: &AssetId<Image>,
-    ) -> Option<web_sys::HtmlVideoElement> {
-        VIDEO_ELEMENTS.with_borrow(|ve| ve.get(asset_id).map(|e| e.element.clone()))
+    pub fn get_video_element(asset_id: AssetId<Image>) -> Option<web_sys::HtmlVideoElement> {
+        VIDEO_ELEMENTS.with_borrow(|ve| ve.get(&asset_id).map(|e| e.element.clone()))
+    }
+}
+
+impl WebVideo {
+    pub fn new(asset_id: AssetId<Image>) -> Result<Self> {
+        if !VIDEO_ELEMENTS.with_borrow(|ve| ve.contains_key(&asset_id)) {
+            Err(format!("Invalid AssetId {asset_id:?}").into())
+        } else {
+            Ok(Self { asset_id })
+        }
     }
 
-    fn new_image(&self, size: Extent3d) -> Image {
-        let mut image = Image::new_uninit(
-            size,
-            TextureDimension::D2,
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-        image
+    pub fn asset_id(&self) -> AssetId<Image> {
+        self.asset_id
     }
+
+    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
+        WebVideoRegistry::get_video_element(self.asset_id)
+    }
+}
+
+fn new_image(size: Extent3d) -> Image {
+    let mut image = Image::new_uninit(
+        size,
+        TextureDimension::D2,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+    image
 }
 
 impl std::error::Error for WebVideoError {}
@@ -160,23 +186,47 @@ fn remove_unused_video_elements(mut events: EventReader<AssetEvent<Image>>) {
     }
 }
 
-fn handle_resize(webvideo: Res<WebVideo>, mut images: ResMut<Assets<Image>>) {
-    while let Ok(resize_message) = webvideo.rx.try_recv() {
-        VIDEO_ELEMENTS.with_borrow_mut(|ve| {
+fn handle_resize(
+    mut commands: Commands,
+    video_registry: Res<WebVideoRegistry>,
+    videos: Query<(Entity, &WebVideo)>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    while let Ok(resize_message) = video_registry.rx.try_recv() {
+        if let Some(size_event) = VIDEO_ELEMENTS.with_borrow_mut(|ve| {
             if let Some(video_element) = ve.get(&resize_message.0) {
                 // This probably doesn't work if the video texture resizes while playing
                 // The material would need change detection triggered to refresh the new texture
                 // https://github.com/bevyengine/bevy/issues/16159
                 images.insert(
                     resize_message.0,
-                    webvideo.new_image(Extent3d {
+                    new_image(Extent3d {
                         width: video_element.element.video_width(),
                         height: video_element.element.video_height(),
                         ..default()
                     }),
                 );
+                Some(ResizeVideoEvent {
+                    asset_id: resize_message.0,
+                    width: video_element.element.video_width(),
+                    height: video_element.element.video_height(),
+                })
+            } else {
+                None
             }
-        });
+        }) {
+            videos
+                .iter()
+                .filter_map(|(entity, video)| {
+                    if video.asset_id == resize_message.0 {
+                        Some(entity)
+                    } else {
+                        None
+                    }
+                })
+                .for_each(|entity| commands.trigger_targets(size_event, entity));
+            commands.trigger(size_event);
+        }
     }
 }
 
