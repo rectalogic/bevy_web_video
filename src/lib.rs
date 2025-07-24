@@ -1,4 +1,5 @@
 use crossbeam_channel::unbounded;
+use enumset::EnumSet;
 use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
@@ -18,13 +19,19 @@ use wgpu_types::{
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
 
+use crate::event::{LoadedMetadata, Playing, Resize, VideoEvent, VideoEventAsset, VideoEventType};
+
+pub mod event;
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
         let (tx, rx) = unbounded();
         app.insert_resource(WebVideoRegistry { rx, tx })
-            .add_systems(Update, (remove_unused_video_elements, handle_resize));
+            .add_systems(Update, (remove_unused_video_elements, trigger_video_events))
+            .add_observer(observe_loaded_metadata)
+            .add_observer(observe_resize)
+            .add_observer(observe_playing);
     }
 
     fn finish(&self, app: &mut App) {
@@ -42,12 +49,13 @@ thread_local! {
 struct VideoElement {
     element: web_sys::HtmlVideoElement,
     loaded: bool,
+    listeners: EnumSet<VideoEventType>,
 }
 
 #[derive(Resource)]
 pub struct WebVideoRegistry {
-    rx: crossbeam_channel::Receiver<VideoSizeMessage>,
-    tx: crossbeam_channel::Sender<VideoSizeMessage>,
+    rx: crossbeam_channel::Receiver<VideoEvent>,
+    tx: crossbeam_channel::Sender<VideoEvent>,
 }
 
 #[derive(Clone, Component)]
@@ -58,16 +66,6 @@ pub struct WebVideo {
 #[derive(Debug)]
 pub struct WebVideoError {
     message: String,
-}
-
-#[derive(Copy, Clone)]
-struct VideoSizeMessage(AssetId<Image>);
-
-#[derive(Copy, Clone, Event)]
-pub struct ResizeVideoEvent {
-    pub asset_id: AssetId<Image>,
-    pub width: u32,
-    pub height: u32,
 }
 
 impl WebVideoRegistry {
@@ -90,64 +88,65 @@ impl WebVideoRegistry {
             .typed::<Image>();
         let asset_id = image_handle.id();
 
-        let tx = self.tx.clone();
-        let resize_cb = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::Event| {
-            if let Err(err) = tx.send(VideoSizeMessage(asset_id)) {
-                warn!("Failed to handle video resize: {err:?}");
-            }
-        });
-        html_video_element
-            .add_event_listener_with_callback("loadedmetadata", resize_cb.as_ref().unchecked_ref())
-            .map_err(WebVideoError::from)?;
-        html_video_element
-            .add_event_listener_with_callback("resize", resize_cb.as_ref().unchecked_ref())
-            .map_err(WebVideoError::from)?;
-        resize_cb.forget();
-
-        let playing_cb = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::Event| {
-            VIDEO_ELEMENTS.with_borrow_mut(|ve| {
-                if let Some(video_element) = ve.get_mut(&asset_id) {
-                    video_element.loaded = true;
-                }
-            });
-        });
-        html_video_element
-            .add_event_listener_with_callback("playing", playing_cb.as_ref().unchecked_ref())
-            .map_err(WebVideoError::from)?;
-        playing_cb.forget();
-
         VIDEO_ELEMENTS.with_borrow_mut(|ve| {
             ve.insert(
                 asset_id,
                 VideoElement {
                     element: html_video_element.clone(),
                     loaded: false,
+                    listeners: EnumSet::empty(),
                 },
             )
         });
+
+        self.enable_observer(VideoEventType::Resize, asset_id)?;
+        self.enable_observer(VideoEventType::LoadedMetadata, asset_id)?;
+        self.enable_observer(VideoEventType::Playing, asset_id)?;
+
         Ok((image_handle, html_video_element))
     }
 
-    pub fn get_video_element(asset_id: AssetId<Image>) -> Option<web_sys::HtmlVideoElement> {
-        VIDEO_ELEMENTS.with_borrow(|ve| ve.get(&asset_id).map(|e| e.element.clone()))
+    pub fn enable_observer(
+        &self,
+        event_type: VideoEventType,
+        asset_id: AssetId<Image>,
+    ) -> Result<()> {
+        let tx = self.tx.clone();
+        VIDEO_ELEMENTS.with_borrow_mut(|ve| {
+            if let Some(video_element) = ve.get_mut(&asset_id)
+                && !video_element.listeners.contains(event_type)
+            {
+                let callback = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::Event| {
+                    if let Err(err) = tx.send(VideoEvent {
+                        asset_id,
+                        event_type,
+                    }) {
+                        warn!("Failed to handle video {event_type:?}: {err:?}");
+                    }
+                });
+                video_element
+                    .element
+                    .add_event_listener_with_callback(
+                        event_type.into(),
+                        callback.as_ref().unchecked_ref(),
+                    )
+                    .map_err(WebVideoError::from)?;
+                callback.forget();
+                video_element.listeners.insert(event_type);
+            }
+            Ok(())
+        })
     }
 }
 
 impl WebVideo {
-    pub fn new(asset_id: AssetId<Image>) -> Result<Self> {
-        if !VIDEO_ELEMENTS.with_borrow(|ve| ve.contains_key(&asset_id)) {
-            Err(format!("Invalid AssetId {asset_id:?}").into())
-        } else {
-            Ok(Self { asset_id })
-        }
-    }
-
     pub fn asset_id(&self) -> AssetId<Image> {
         self.asset_id
     }
 
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        WebVideoRegistry::get_video_element(self.asset_id)
+        let asset_id = self.asset_id;
+        VIDEO_ELEMENTS.with_borrow(|ve| ve.get(&asset_id).map(|e| e.element.clone()))
     }
 }
 
@@ -186,48 +185,80 @@ fn remove_unused_video_elements(mut events: EventReader<AssetEvent<Image>>) {
     }
 }
 
-fn handle_resize(
-    mut commands: Commands,
-    video_registry: Res<WebVideoRegistry>,
-    videos: Query<(Entity, &WebVideo)>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    while let Ok(resize_message) = video_registry.rx.try_recv() {
-        if let Some(size_event) = VIDEO_ELEMENTS.with_borrow_mut(|ve| {
-            if let Some(video_element) = ve.get(&resize_message.0) {
-                // This probably doesn't work if the video texture resizes while playing
-                // The material would need change detection triggered to refresh the new texture
-                // https://github.com/bevyengine/bevy/issues/16159
-                images.insert(
-                    resize_message.0,
-                    new_image(Extent3d {
-                        width: video_element.element.video_width(),
-                        height: video_element.element.video_height(),
-                        ..default()
-                    }),
-                );
-                Some(ResizeVideoEvent {
-                    asset_id: resize_message.0,
-                    width: video_element.element.video_width(),
-                    height: video_element.element.video_height(),
-                })
+fn dispatch_event<E>(event: E, commands: &mut Commands, videos: Query<(Entity, &WebVideo)>)
+where
+    E: VideoEventAsset,
+{
+    videos
+        .iter()
+        .filter_map(|(entity, video)| {
+            if video.asset_id == event.asset_id() {
+                Some(entity)
             } else {
                 None
             }
-        }) {
-            videos
-                .iter()
-                .filter_map(|(entity, video)| {
-                    if video.asset_id == resize_message.0 {
-                        Some(entity)
-                    } else {
-                        None
-                    }
-                })
-                .for_each(|entity| commands.trigger_targets(size_event, entity));
-            commands.trigger(size_event);
-        }
+        })
+        .for_each(|entity| commands.trigger_targets(event, entity));
+    commands.trigger(event);
+}
+
+fn trigger_video_events(
+    mut commands: Commands,
+    video_registry: Res<WebVideoRegistry>,
+    videos: Query<(Entity, &WebVideo)>,
+) {
+    while let Ok(VideoEvent {
+        asset_id,
+        event_type,
+    }) = video_registry.rx.try_recv()
+    {
+        match event_type {
+            VideoEventType::Resize => dispatch_event(Resize(asset_id), &mut commands, videos),
+            VideoEventType::LoadedMetadata => {
+                dispatch_event(LoadedMetadata(asset_id), &mut commands, videos)
+            }
+            VideoEventType::Playing => dispatch_event(Playing(asset_id), &mut commands, videos),
+        };
     }
+}
+
+fn handle_video_size(asset_id: AssetId<Image>, mut images: ResMut<Assets<Image>>) -> Result<()> {
+    VIDEO_ELEMENTS.with_borrow_mut(|ve| {
+        if let Some(video_element) = ve.get(&asset_id) {
+            images.insert(
+                asset_id,
+                new_image(Extent3d {
+                    width: video_element.element.video_width(),
+                    height: video_element.element.video_height(),
+                    ..default()
+                }),
+            );
+        }
+        Ok(())
+    })
+}
+
+fn observe_loaded_metadata(
+    trigger: Trigger<LoadedMetadata>,
+    images: ResMut<Assets<Image>>,
+) -> Result<()> {
+    handle_video_size(trigger.event().asset_id(), images)
+}
+
+fn observe_resize(trigger: Trigger<Resize>, images: ResMut<Assets<Image>>) -> Result<()> {
+    // This probably doesn't work if the video texture resizes while playing
+    // The material would need change detection triggered to refresh the new texture
+    // https://github.com/bevyengine/bevy/issues/16159
+    handle_video_size(trigger.event().asset_id(), images)
+}
+
+fn observe_playing(trigger: Trigger<Playing>) {
+    let asset_id = trigger.event().asset_id();
+    VIDEO_ELEMENTS.with_borrow_mut(|ve| {
+        if let Some(video_element) = ve.get_mut(&asset_id) {
+            video_element.loaded = true;
+        }
+    });
 }
 
 fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
