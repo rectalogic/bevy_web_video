@@ -59,9 +59,7 @@ pub struct WebVideoRegistry {
 }
 
 #[derive(Clone, Component)]
-pub struct WebVideo {
-    asset_id: AssetId<Image>,
-}
+pub struct WebVideo(pub AssetId<Image>);
 
 #[derive(Debug)]
 pub struct WebVideoError {
@@ -71,7 +69,7 @@ pub struct WebVideoError {
 impl WebVideoRegistry {
     pub fn new_video_texture(
         &self,
-        images: Res<Assets<Image>>,
+        images: &Assets<Image>,
     ) -> Result<(Handle<Image>, web_sys::HtmlVideoElement)> {
         let html_video_element = web_sys::window()
             .expect("window")
@@ -136,12 +134,8 @@ impl WebVideoRegistry {
 }
 
 impl WebVideo {
-    pub fn asset_id(&self) -> AssetId<Image> {
-        self.asset_id
-    }
-
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        let asset_id = self.asset_id;
+        let asset_id = self.0;
         VIDEO_ELEMENTS.with_borrow(|ve| ve.get(&asset_id).map(|e| e.element.clone()))
     }
 }
@@ -191,7 +185,7 @@ fn dispatch_event<E>(
     videos
         .iter()
         .filter_map(|(entity, video)| {
-            if video.asset_id == event.asset_id {
+            if video.0 == event.asset_id {
                 Some(entity)
             } else {
                 None

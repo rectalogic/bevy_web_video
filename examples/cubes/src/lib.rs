@@ -1,4 +1,11 @@
+#[cfg(feature = "webgpu")]
+use bevy::{
+    core_pipeline::prepass::DepthPrepass,
+    pbr::decal::{ForwardDecal, ForwardDecalMaterial, ForwardDecalMaterialExt},
+};
 use bevy::{prelude::*, window::WindowResolution};
+#[cfg(feature = "webgpu")]
+use bevy_web_video::{WebVideo, event};
 use bevy_web_video::{WebVideoError, WebVideoPlugin, WebVideoRegistry};
 use wasm_bindgen::prelude::*;
 
@@ -22,14 +29,20 @@ pub fn start() {
     app.run();
 }
 
+#[derive(Component)]
+struct Animated;
+
 fn setup(
     mut commands: Commands,
     video_registry: Res<WebVideoRegistry>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    #[cfg(feature = "webgpu")] mut decal_materials: ResMut<
+        Assets<ForwardDecalMaterial<StandardMaterial>>,
+    >,
     images: Res<Assets<Image>>,
 ) -> Result<()> {
-    let (image_handle, video) = video_registry.new_video_texture(images)?;
+    let (image_handle1, video) = video_registry.new_video_texture(&images)?;
     video.set_cross_origin(Some("anonymous"));
     video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
     video.set_muted(true);
@@ -37,15 +50,156 @@ fn setup(
     let _ = video.play().map_err(WebVideoError::from)?;
 
     commands.spawn((
+        Animated,
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(image_handle)),
+        MeshMaterial3d(materials.add(image_handle1.clone())),
+        Transform::from_xyz(-0.75, 0.0, 0.0),
     ));
-    commands.spawn((PointLight::default(), Transform::from_xyz(3.0, 3.0, 2.0)));
-    commands.spawn((Camera3d::default(), Transform::from_xyz(0., 0., 2.)));
+
+    // Decals broken on webgl2 https://github.com/bevyengine/bevy/issues/19177
+    #[cfg(feature = "webgpu")]
+    {
+        let asset_id1 = image_handle1.id();
+        let (image_handle2, video) = video_registry.new_video_texture(&images)?;
+        video.set_cross_origin(Some("anonymous"));
+        video.set_src(
+        "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4",
+    );
+        video.set_muted(true);
+        video.set_loop(true);
+        let _ = video.play().map_err(WebVideoError::from)?;
+        let asset_id2 = image_handle2.id();
+
+        video_registry
+            .enable_observer(event::VideoEvents::LoadedMetadata, asset_id1)
+            .unwrap();
+        video_registry
+            .enable_observer(event::VideoEvents::LoadedMetadata, asset_id2)
+            .unwrap();
+        let parent = commands
+            .spawn((
+                Animated,
+                Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+                MeshMaterial3d(materials.add(Color::WHITE)),
+                Transform::from_xyz(0.75, 0.0, 0.0),
+            ))
+            .id();
+
+        let decal_material1 = decal_materials.add(new_decal_material(image_handle1));
+        let decal_material2 = decal_materials.add(new_decal_material(image_handle2));
+
+        let decals = [
+            // Top
+            video_decal(
+                &mut commands,
+                asset_id1,
+                decal_material1.clone(),
+                Transform::from_xyz(0.0, 0.5, 0.0),
+            ),
+            // Bottom
+            video_decal(
+                &mut commands,
+                asset_id2,
+                decal_material2.clone(),
+                Transform::from_xyz(0.0, -0.5, 0.0)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, -Vec3::Y)),
+            ),
+            // Left
+            video_decal(
+                &mut commands,
+                asset_id2,
+                decal_material2.clone(),
+                Transform::from_xyz(-0.5, 0.0, 0.0)
+                    .with_rotation(Quat::from_rotation_arc(-Vec3::X, -Vec3::Y)),
+            ),
+            // Right
+            video_decal(
+                &mut commands,
+                asset_id1,
+                decal_material1.clone(),
+                Transform::from_xyz(0.5, 0.0, 0.0)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::X, -Vec3::Y)),
+            ),
+            // Front
+            video_decal(
+                &mut commands,
+                asset_id1,
+                decal_material1,
+                Transform::from_xyz(0.0, 0.0, 0.5)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, Vec3::Z)),
+            ),
+            // Back
+            video_decal(
+                &mut commands,
+                asset_id2,
+                decal_material2,
+                Transform::from_xyz(0.0, 0.0, -0.5)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, -Vec3::Z)),
+            ),
+        ];
+        commands.entity(parent).add_children(&decals);
+    }
+
+    commands.spawn((PointLight::default(), Transform::from_xyz(3.0, 3.0, 4.0)));
+    commands.spawn((
+        Camera3d::default(),
+        #[cfg(feature = "webgpu")]
+        DepthPrepass, // required for decals
+        #[cfg(feature = "webgpu")]
+        Msaa::Off, // workaround https://github.com/bevyengine/bevy/issues/19177
+        Transform::from_xyz(0., 0., 3.),
+    ));
     Ok(())
 }
 
-fn update(mut videos: Query<&mut Transform, With<Mesh3d>>, time: Res<Time>) {
+#[cfg(feature = "webgpu")]
+fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMaterial> {
+    ForwardDecalMaterial {
+        base: StandardMaterial {
+            base_color_texture: Some(image),
+            ..default()
+        },
+        extension: ForwardDecalMaterialExt {
+            depth_fade_factor: 1.0,
+        },
+    }
+}
+
+#[cfg(feature = "webgpu")]
+fn video_decal(
+    commands: &mut Commands,
+    asset_id: AssetId<Image>,
+    decal_material: Handle<ForwardDecalMaterial<StandardMaterial>>,
+    transform: Transform,
+) -> Entity {
+    commands
+        .spawn((
+            WebVideo(asset_id),
+            ForwardDecal,
+            MeshMaterial3d(decal_material),
+            transform,
+        ))
+        .observe(
+            |trigger: Trigger<event::VideoEvent<event::LoadedMetadata>>,
+             mut decals: Query<&mut Transform, With<ForwardDecal>>| {
+                if let Ok(mut transform) = decals.get_mut(trigger.target()) {
+                    let event::VideoEvent {
+                        event: event::LoadedMetadata { width, height },
+                        ..
+                    } = trigger.event();
+                    // Scale decal to match video aspect ratio
+                    if width > height {
+                        transform.scale.z = *height as f32 / *width as f32;
+                    } else {
+                        transform.scale.x = *width as f32 / *height as f32;
+                    }
+                }
+            },
+        )
+        .id()
+}
+
+fn update(mut videos: Query<&mut Transform, With<Animated>>, time: Res<Time>) {
     for mut transform in videos.iter_mut() {
         transform.rotate_x(time.delta_secs() * 0.8);
         transform.rotate_z(time.delta_secs() * 0.25);
