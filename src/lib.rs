@@ -19,7 +19,7 @@ use wgpu_types::{
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
 
-use crate::event::{LoadedMetadata, Playing, Resize, VideoEvent, VideoEventMessage, VideoEvents};
+use crate::event::{VideoEvent, VideoEventMessage, VideoEvents};
 
 pub mod event;
 pub struct WebVideoPlugin;
@@ -214,13 +214,66 @@ fn trigger_video_events(
         VIDEO_ELEMENTS.with_borrow(|ve| {
             if let Some(video_element) = ve.get(&asset_id) {
                 match event_type {
-                    VideoEvents::Resize => dispatch_event(
+                    VideoEvents::Abort => dispatch_event(
                         VideoEvent {
                             asset_id,
-                            event: Resize {
-                                width: video_element.element.video_width(),
-                                height: video_element.element.video_height(),
-                            },
+                            event: event::Abort,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::CanPlay => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::CanPlay,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::CanPlayThrough => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::CanPlayThrough,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::DurationChanged => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::DurationChanged,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Emptied => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Emptied,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Ended => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Ended,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Error => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Error,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::LoadedData => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::LoadedData,
                         },
                         &mut commands,
                         videos,
@@ -228,7 +281,7 @@ fn trigger_video_events(
                     VideoEvents::LoadedMetadata => dispatch_event(
                         VideoEvent {
                             asset_id,
-                            event: LoadedMetadata {
+                            event: event::LoadedMetadata {
                                 width: video_element.element.video_width(),
                                 height: video_element.element.video_height(),
                             },
@@ -236,10 +289,125 @@ fn trigger_video_events(
                         &mut commands,
                         videos,
                     ),
+                    VideoEvents::LoadStart => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::LoadStart,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Pause => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Pause,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Play => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Play,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
                     VideoEvents::Playing => dispatch_event(
                         VideoEvent {
                             asset_id,
-                            event: Playing,
+                            event: event::Playing,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Progress => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Progress,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::RateChange => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::RateChange,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Resize => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Resize {
+                                width: video_element.element.video_width(),
+                                height: video_element.element.video_height(),
+                            },
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Seeked => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Seeked,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Seeking => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Seeking,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Stalled => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Stalled,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Suspend => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Suspend,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::TimeUpdate => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::TimeUpdate,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::VolumeChange => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::VolumeChange,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Waiting => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::Waiting,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::WaitingForKey => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: event::WaitingForKey,
                         },
                         &mut commands,
                         videos,
@@ -267,28 +435,28 @@ fn handle_video_size(
 }
 
 fn observe_loaded_metadata(
-    trigger: Trigger<VideoEvent<LoadedMetadata>>,
+    trigger: Trigger<VideoEvent<event::LoadedMetadata>>,
     images: ResMut<Assets<Image>>,
 ) {
     let VideoEvent {
         asset_id,
-        event: LoadedMetadata { width, height },
+        event: event::LoadedMetadata { width, height },
     } = trigger.event();
     handle_video_size(*width, *height, *asset_id, images);
 }
 
-fn observe_resize(trigger: Trigger<VideoEvent<Resize>>, images: ResMut<Assets<Image>>) {
+fn observe_resize(trigger: Trigger<VideoEvent<event::Resize>>, images: ResMut<Assets<Image>>) {
     // This probably doesn't work if the video texture resizes while playing
     // The material would need change detection triggered to refresh the new texture
     // https://github.com/bevyengine/bevy/issues/16159
     let VideoEvent {
         asset_id,
-        event: Resize { width, height },
+        event: event::Resize { width, height },
     } = trigger.event();
     handle_video_size(*width, *height, *asset_id, images)
 }
 
-fn observe_playing(trigger: Trigger<VideoEvent<Playing>>) {
+fn observe_playing(trigger: Trigger<VideoEvent<event::Playing>>) {
     let asset_id = trigger.event().asset_id;
     VIDEO_ELEMENTS.with_borrow_mut(|ve| {
         if let Some(video_element) = ve.get_mut(&asset_id) {
