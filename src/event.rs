@@ -1,52 +1,42 @@
 use bevy::prelude::*;
 use enumset::EnumSetType;
 
-pub struct VideoEvent {
+pub(crate) struct VideoEventMessage {
     pub asset_id: AssetId<Image>,
-    pub event_type: VideoEventType,
+    pub event_type: VideoEvents,
 }
 
 #[derive(EnumSetType, Debug)]
-pub enum VideoEventType {
+pub enum VideoEvents {
     Resize,
     LoadedMetadata,
     Playing,
 }
 
-pub(crate) trait VideoEventAsset: Event<Traversal = ()> + Copy + std::fmt::Debug {
-    fn asset_id(&self) -> AssetId<Image>;
-}
-
 #[derive(Copy, Clone, Debug, Event)]
-pub struct Resize(pub AssetId<Image>);
-impl VideoEventAsset for Resize {
-    fn asset_id(&self) -> AssetId<Image> {
-        self.0
-    }
+pub struct VideoEvent<E>
+where
+    E: std::fmt::Debug + Copy + Clone + Send + Sync,
+{
+    pub asset_id: AssetId<Image>,
+    pub event: E,
 }
 
-#[derive(Copy, Clone, Debug, Event)]
-pub struct LoadedMetadata(pub AssetId<Image>);
-impl VideoEventAsset for LoadedMetadata {
-    fn asset_id(&self) -> AssetId<Image> {
-        self.0
-    }
-}
+#[derive(Copy, Clone, Debug)]
+pub struct Resize;
 
-#[derive(Copy, Clone, Debug, Event)]
-pub struct Playing(pub AssetId<Image>);
-impl VideoEventAsset for Playing {
-    fn asset_id(&self) -> AssetId<Image> {
-        self.0
-    }
-}
+#[derive(Copy, Clone, Debug)]
+pub struct LoadedMetadata;
 
-impl From<VideoEventType> for &'static str {
-    fn from(value: VideoEventType) -> Self {
+#[derive(Copy, Clone, Debug)]
+pub struct Playing;
+
+impl From<VideoEvents> for &'static str {
+    fn from(value: VideoEvents) -> Self {
         match value {
-            VideoEventType::Resize => "resize",
-            VideoEventType::LoadedMetadata => "loadedmetadata",
-            VideoEventType::Playing => "playing",
+            VideoEvents::Resize => "resize",
+            VideoEvents::LoadedMetadata => "loadedmetadata",
+            VideoEvents::Playing => "playing",
         }
     }
 }

@@ -19,7 +19,7 @@ use wgpu_types::{
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
 
-use crate::event::{LoadedMetadata, Playing, Resize, VideoEvent, VideoEventAsset, VideoEventType};
+use crate::event::{LoadedMetadata, Playing, Resize, VideoEvent, VideoEventMessage, VideoEvents};
 
 pub mod event;
 pub struct WebVideoPlugin;
@@ -49,13 +49,13 @@ thread_local! {
 struct VideoElement {
     element: web_sys::HtmlVideoElement,
     loaded: bool,
-    listeners: EnumSet<VideoEventType>,
+    enabled_events: EnumSet<VideoEvents>,
 }
 
 #[derive(Resource)]
 pub struct WebVideoRegistry {
-    rx: crossbeam_channel::Receiver<VideoEvent>,
-    tx: crossbeam_channel::Sender<VideoEvent>,
+    rx: crossbeam_channel::Receiver<VideoEventMessage>,
+    tx: crossbeam_channel::Sender<VideoEventMessage>,
 }
 
 #[derive(Clone, Component)]
@@ -94,30 +94,26 @@ impl WebVideoRegistry {
                 VideoElement {
                     element: html_video_element.clone(),
                     loaded: false,
-                    listeners: EnumSet::empty(),
+                    enabled_events: EnumSet::empty(),
                 },
             )
         });
 
-        self.enable_observer(VideoEventType::Resize, asset_id)?;
-        self.enable_observer(VideoEventType::LoadedMetadata, asset_id)?;
-        self.enable_observer(VideoEventType::Playing, asset_id)?;
+        self.enable_observer(VideoEvents::Resize, asset_id)?;
+        self.enable_observer(VideoEvents::LoadedMetadata, asset_id)?;
+        self.enable_observer(VideoEvents::Playing, asset_id)?;
 
         Ok((image_handle, html_video_element))
     }
 
-    pub fn enable_observer(
-        &self,
-        event_type: VideoEventType,
-        asset_id: AssetId<Image>,
-    ) -> Result<()> {
+    pub fn enable_observer(&self, event_type: VideoEvents, asset_id: AssetId<Image>) -> Result<()> {
         let tx = self.tx.clone();
         VIDEO_ELEMENTS.with_borrow_mut(|ve| {
             if let Some(video_element) = ve.get_mut(&asset_id)
-                && !video_element.listeners.contains(event_type)
+                && !video_element.enabled_events.contains(event_type)
             {
                 let callback = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::Event| {
-                    if let Err(err) = tx.send(VideoEvent {
+                    if let Err(err) = tx.send(VideoEventMessage {
                         asset_id,
                         event_type,
                     }) {
@@ -132,7 +128,7 @@ impl WebVideoRegistry {
                     )
                     .map_err(WebVideoError::from)?;
                 callback.forget();
-                video_element.listeners.insert(event_type);
+                video_element.enabled_events.insert(event_type);
             }
             Ok(())
         })
@@ -185,14 +181,17 @@ fn remove_unused_video_elements(mut events: EventReader<AssetEvent<Image>>) {
     }
 }
 
-fn dispatch_event<E>(event: E, commands: &mut Commands, videos: Query<(Entity, &WebVideo)>)
-where
-    E: VideoEventAsset,
+fn dispatch_event<E>(
+    event: VideoEvent<E>,
+    commands: &mut Commands,
+    videos: Query<(Entity, &WebVideo)>,
+) where
+    E: std::fmt::Debug + Copy + Clone + Send + Sync + 'static,
 {
     videos
         .iter()
         .filter_map(|(entity, video)| {
-            if video.asset_id == event.asset_id() {
+            if video.asset_id == event.asset_id {
                 Some(entity)
             } else {
                 None
@@ -207,17 +206,36 @@ fn trigger_video_events(
     video_registry: Res<WebVideoRegistry>,
     videos: Query<(Entity, &WebVideo)>,
 ) {
-    while let Ok(VideoEvent {
+    while let Ok(VideoEventMessage {
         asset_id,
         event_type,
     }) = video_registry.rx.try_recv()
     {
         match event_type {
-            VideoEventType::Resize => dispatch_event(Resize(asset_id), &mut commands, videos),
-            VideoEventType::LoadedMetadata => {
-                dispatch_event(LoadedMetadata(asset_id), &mut commands, videos)
-            }
-            VideoEventType::Playing => dispatch_event(Playing(asset_id), &mut commands, videos),
+            VideoEvents::Resize => dispatch_event(
+                VideoEvent {
+                    asset_id,
+                    event: Resize,
+                },
+                &mut commands,
+                videos,
+            ),
+            VideoEvents::LoadedMetadata => dispatch_event(
+                VideoEvent {
+                    asset_id,
+                    event: LoadedMetadata,
+                },
+                &mut commands,
+                videos,
+            ),
+            VideoEvents::Playing => dispatch_event(
+                VideoEvent {
+                    asset_id,
+                    event: Playing,
+                },
+                &mut commands,
+                videos,
+            ),
         };
     }
 }
@@ -239,21 +257,24 @@ fn handle_video_size(asset_id: AssetId<Image>, mut images: ResMut<Assets<Image>>
 }
 
 fn observe_loaded_metadata(
-    trigger: Trigger<LoadedMetadata>,
+    trigger: Trigger<VideoEvent<LoadedMetadata>>,
     images: ResMut<Assets<Image>>,
 ) -> Result<()> {
-    handle_video_size(trigger.event().asset_id(), images)
+    handle_video_size(trigger.event().asset_id, images)
 }
 
-fn observe_resize(trigger: Trigger<Resize>, images: ResMut<Assets<Image>>) -> Result<()> {
+fn observe_resize(
+    trigger: Trigger<VideoEvent<Resize>>,
+    images: ResMut<Assets<Image>>,
+) -> Result<()> {
     // This probably doesn't work if the video texture resizes while playing
     // The material would need change detection triggered to refresh the new texture
     // https://github.com/bevyengine/bevy/issues/16159
-    handle_video_size(trigger.event().asset_id(), images)
+    handle_video_size(trigger.event().asset_id, images)
 }
 
-fn observe_playing(trigger: Trigger<Playing>) {
-    let asset_id = trigger.event().asset_id();
+fn observe_playing(trigger: Trigger<VideoEvent<Playing>>) {
+    let asset_id = trigger.event().asset_id;
     VIDEO_ELEMENTS.with_borrow_mut(|ve| {
         if let Some(video_element) = ve.get_mut(&asset_id) {
             video_element.loaded = true;
