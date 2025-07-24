@@ -211,66 +211,81 @@ fn trigger_video_events(
         event_type,
     }) = video_registry.rx.try_recv()
     {
-        match event_type {
-            VideoEvents::Resize => dispatch_event(
-                VideoEvent {
-                    asset_id,
-                    event: Resize,
-                },
-                &mut commands,
-                videos,
-            ),
-            VideoEvents::LoadedMetadata => dispatch_event(
-                VideoEvent {
-                    asset_id,
-                    event: LoadedMetadata,
-                },
-                &mut commands,
-                videos,
-            ),
-            VideoEvents::Playing => dispatch_event(
-                VideoEvent {
-                    asset_id,
-                    event: Playing,
-                },
-                &mut commands,
-                videos,
-            ),
-        };
+        VIDEO_ELEMENTS.with_borrow(|ve| {
+            if let Some(video_element) = ve.get(&asset_id) {
+                match event_type {
+                    VideoEvents::Resize => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: Resize {
+                                width: video_element.element.video_width(),
+                                height: video_element.element.video_height(),
+                            },
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::LoadedMetadata => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: LoadedMetadata {
+                                width: video_element.element.video_width(),
+                                height: video_element.element.video_height(),
+                            },
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                    VideoEvents::Playing => dispatch_event(
+                        VideoEvent {
+                            asset_id,
+                            event: Playing,
+                        },
+                        &mut commands,
+                        videos,
+                    ),
+                };
+            }
+        });
     }
 }
 
-fn handle_video_size(asset_id: AssetId<Image>, mut images: ResMut<Assets<Image>>) -> Result<()> {
-    VIDEO_ELEMENTS.with_borrow_mut(|ve| {
-        if let Some(video_element) = ve.get(&asset_id) {
-            images.insert(
-                asset_id,
-                new_image(Extent3d {
-                    width: video_element.element.video_width(),
-                    height: video_element.element.video_height(),
-                    ..default()
-                }),
-            );
-        }
-        Ok(())
-    })
+fn handle_video_size(
+    width: u32,
+    height: u32,
+    asset_id: AssetId<Image>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    images.insert(
+        asset_id,
+        new_image(Extent3d {
+            width,
+            height,
+            ..default()
+        }),
+    );
 }
 
 fn observe_loaded_metadata(
     trigger: Trigger<VideoEvent<LoadedMetadata>>,
     images: ResMut<Assets<Image>>,
-) -> Result<()> {
-    handle_video_size(trigger.event().asset_id, images)
+) {
+    let VideoEvent {
+        asset_id,
+        event: LoadedMetadata { width, height },
+    } = trigger.event();
+    handle_video_size(*width, *height, *asset_id, images);
 }
 
-fn observe_resize(
-    trigger: Trigger<VideoEvent<Resize>>,
-    images: ResMut<Assets<Image>>,
-) -> Result<()> {
+fn observe_resize(trigger: Trigger<VideoEvent<Resize>>, images: ResMut<Assets<Image>>) {
     // This probably doesn't work if the video texture resizes while playing
     // The material would need change detection triggered to refresh the new texture
     // https://github.com/bevyengine/bevy/issues/16159
-    handle_video_size(trigger.event().asset_id, images)
+    let VideoEvent {
+        asset_id,
+        event: Resize { width, height },
+    } = trigger.event();
+    handle_video_size(*width, *height, *asset_id, images)
 }
 
 fn observe_playing(trigger: Trigger<VideoEvent<Playing>>) {

@@ -23,10 +23,16 @@ where
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Resize;
+pub struct Resize {
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(Copy, Clone, Debug)]
-pub struct LoadedMetadata;
+pub struct LoadedMetadata {
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(Copy, Clone, Debug)]
 pub struct Playing;
