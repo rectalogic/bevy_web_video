@@ -175,28 +175,6 @@ fn remove_unused_video_elements(mut events: EventReader<AssetEvent<Image>>) {
     }
 }
 
-fn dispatch_event<E>(
-    asset_id: AssetId<Image>,
-    event: E,
-    commands: &mut Commands,
-    videos: Query<(Entity, &WebVideo)>,
-) where
-    E: std::fmt::Debug + Copy + Clone + Send + Sync + 'static,
-{
-    let video_event = VideoEvent { asset_id, event };
-    videos
-        .iter()
-        .filter_map(|(entity, video)| {
-            if video.0 == asset_id {
-                Some(entity)
-            } else {
-                None
-            }
-        })
-        .for_each(|entity| commands.trigger_targets(video_event, entity));
-    commands.trigger(video_event);
-}
-
 fn trigger_video_events(
     mut commands: Commands,
     video_registry: Res<WebVideoRegistry>,
@@ -209,92 +187,13 @@ fn trigger_video_events(
     {
         VIDEO_ELEMENTS.with_borrow(|ve| {
             if let Some(video_element) = ve.get(&asset_id) {
-                match event_type {
-                    VideoEvents::Abort => {
-                        dispatch_event(asset_id, event::Abort, &mut commands, videos)
-                    }
-                    VideoEvents::CanPlay => {
-                        dispatch_event(asset_id, event::CanPlay, &mut commands, videos)
-                    }
-                    VideoEvents::CanPlayThrough => {
-                        dispatch_event(asset_id, event::CanPlayThrough, &mut commands, videos)
-                    }
-                    VideoEvents::DurationChanged => {
-                        dispatch_event(asset_id, event::DurationChanged, &mut commands, videos)
-                    }
-                    VideoEvents::Emptied => {
-                        dispatch_event(asset_id, event::Emptied, &mut commands, videos)
-                    }
-                    VideoEvents::Ended => {
-                        dispatch_event(asset_id, event::Ended, &mut commands, videos)
-                    }
-                    VideoEvents::Error => {
-                        dispatch_event(asset_id, event::Error, &mut commands, videos)
-                    }
-                    VideoEvents::LoadedData => {
-                        dispatch_event(asset_id, event::LoadedData, &mut commands, videos)
-                    }
-                    VideoEvents::LoadedMetadata => dispatch_event(
-                        asset_id,
-                        event::LoadedMetadata {
-                            width: video_element.element.video_width(),
-                            height: video_element.element.video_height(),
-                        },
-                        &mut commands,
-                        videos,
-                    ),
-                    VideoEvents::LoadStart => {
-                        dispatch_event(asset_id, event::LoadStart, &mut commands, videos)
-                    }
-                    VideoEvents::Pause => {
-                        dispatch_event(asset_id, event::Pause, &mut commands, videos)
-                    }
-                    VideoEvents::Play => {
-                        dispatch_event(asset_id, event::Play, &mut commands, videos)
-                    }
-                    VideoEvents::Playing => {
-                        dispatch_event(asset_id, event::Playing, &mut commands, videos)
-                    }
-                    VideoEvents::Progress => {
-                        dispatch_event(asset_id, event::Progress, &mut commands, videos)
-                    }
-                    VideoEvents::RateChange => {
-                        dispatch_event(asset_id, event::RateChange, &mut commands, videos)
-                    }
-                    VideoEvents::Resize => dispatch_event(
-                        asset_id,
-                        event::Resize {
-                            width: video_element.element.video_width(),
-                            height: video_element.element.video_height(),
-                        },
-                        &mut commands,
-                        videos,
-                    ),
-                    VideoEvents::Seeked => {
-                        dispatch_event(asset_id, event::Seeked, &mut commands, videos)
-                    }
-                    VideoEvents::Seeking => {
-                        dispatch_event(asset_id, event::Seeking, &mut commands, videos)
-                    }
-                    VideoEvents::Stalled => {
-                        dispatch_event(asset_id, event::Stalled, &mut commands, videos)
-                    }
-                    VideoEvents::Suspend => {
-                        dispatch_event(asset_id, event::Suspend, &mut commands, videos)
-                    }
-                    VideoEvents::TimeUpdate => {
-                        dispatch_event(asset_id, event::TimeUpdate, &mut commands, videos)
-                    }
-                    VideoEvents::VolumeChange => {
-                        dispatch_event(asset_id, event::VolumeChange, &mut commands, videos)
-                    }
-                    VideoEvents::Waiting => {
-                        dispatch_event(asset_id, event::Waiting, &mut commands, videos)
-                    }
-                    VideoEvents::WaitingForKey => {
-                        dispatch_event(asset_id, event::WaitingForKey, &mut commands, videos)
-                    }
-                };
+                event::dispatch_events(
+                    event_type,
+                    asset_id,
+                    &video_element.element,
+                    &mut commands,
+                    videos,
+                );
             }
         });
     }
