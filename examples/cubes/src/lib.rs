@@ -3,10 +3,8 @@ use bevy::{
     core_pipeline::prepass::DepthPrepass,
     pbr::decal::{ForwardDecal, ForwardDecalMaterial, ForwardDecalMaterialExt},
 };
-use bevy::{prelude::*, window::WindowResolution};
-#[cfg(feature = "webgpu")]
-use bevy_web_video::{WebVideo, event};
-use bevy_web_video::{WebVideoError, WebVideoPlugin, WebVideoRegistry};
+use bevy::{math::Affine2, prelude::*, window::WindowResolution};
+use bevy_web_video::{WebVideo, WebVideoError, WebVideoPlugin, WebVideoRegistry, event};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -49,12 +47,44 @@ fn setup(
     video.set_loop(true);
     let _ = video.play().map_err(WebVideoError::from)?;
 
-    commands.spawn((
-        Animated,
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(image_handle1.clone())),
-        Transform::from_xyz(-0.75, 0.0, 0.0),
-    ));
+    commands
+        .spawn((
+            Animated,
+            WebVideo(image_handle1.id()),
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(image_handle1.clone()),
+                ..default()
+            })),
+            Transform::from_xyz(-0.75, 0.0, 0.0),
+        ))
+        .observe(
+            |trigger: Trigger<event::VideoEvent<event::LoadedMetadata>>,
+             mut videos: Query<&MeshMaterial3d<StandardMaterial>, With<WebVideo>>,
+             mut materials: ResMut<Assets<StandardMaterial>>| {
+                if let Ok(mesh_material) = videos.get_mut(trigger.target())
+                    && let Some(material) = materials.get_mut(mesh_material)
+                {
+                    let event::VideoEvent {
+                        event: event::LoadedMetadata { width, height },
+                        ..
+                    } = trigger.event();
+                    // Scale uv transform to match video aspect ratio.
+                    // Zoom in so video fills the face.
+                    if width > height {
+                        let aspect = *height as f32 / *width as f32;
+                        material.uv_transform =
+                            Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
+                                * Affine2::from_scale(Vec2::new(aspect, 1.0));
+                    } else {
+                        let aspect = *width as f32 / *height as f32;
+                        material.uv_transform =
+                            Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
+                                * Affine2::from_scale(Vec2::new(1.0, aspect));
+                    }
+                }
+            },
+        );
 
     // Decals broken on webgl2 https://github.com/bevyengine/bevy/issues/19177
     #[cfg(feature = "webgpu")]
