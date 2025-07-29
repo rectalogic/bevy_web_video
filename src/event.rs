@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use enumset::EnumSetType;
 
-use crate::WebVideo;
+use crate::{VideoElement, WebVideo};
 
 pub(crate) struct VideoEventMessage {
     pub asset_id: AssetId<Image>,
@@ -13,6 +13,7 @@ pub enum VideoEvents {
     Abort,
     CanPlay,
     CanPlayThrough,
+    CueChange,
     DurationChanged,
     Emptied,
     Ended,
@@ -51,6 +52,15 @@ pub struct Abort;
 pub struct CanPlay;
 #[derive(Copy, Clone, Debug)]
 pub struct CanPlayThrough;
+#[derive(Copy, Clone, Debug)]
+pub struct CueChange {
+    pub cue: Option<Cue>,
+}
+#[derive(Copy, Clone, Debug)]
+pub struct Cue {
+    pub start_time: f64,
+    pub end_time: f64,
+}
 #[derive(Copy, Clone, Debug)]
 pub struct DurationChanged;
 #[derive(Copy, Clone, Debug)]
@@ -106,6 +116,7 @@ impl From<VideoEvents> for &'static str {
             VideoEvents::Abort => "abort",
             VideoEvents::CanPlay => "canplay",
             VideoEvents::CanPlayThrough => "canplaythrough",
+            VideoEvents::CueChange => "cuechange",
             VideoEvents::DurationChanged => "durationchanged",
             VideoEvents::Emptied => "emptied",
             VideoEvents::Ended => "ended",
@@ -131,10 +142,29 @@ impl From<VideoEvents> for &'static str {
     }
 }
 
+struct TextTrackCueListIter {
+    cues: web_sys::TextTrackCueList,
+    index: u32,
+}
+impl TextTrackCueListIter {
+    fn new(cues: web_sys::TextTrackCueList) -> Self {
+        Self { cues, index: 0 }
+    }
+}
+impl Iterator for TextTrackCueListIter {
+    type Item = web_sys::VttCue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.index;
+        self.index += 1;
+        self.cues.get(index)
+    }
+}
+
 pub(crate) fn dispatch_events(
     event_type: VideoEvents,
     asset_id: AssetId<Image>,
-    video: &web_sys::HtmlVideoElement,
+    video: &VideoElement,
     commands: &mut Commands,
     videos: Query<(Entity, &WebVideo)>,
 ) {
@@ -142,6 +172,26 @@ pub(crate) fn dispatch_events(
         VideoEvents::Abort => trigger_event(asset_id, Abort, commands, videos),
         VideoEvents::CanPlay => trigger_event(asset_id, CanPlay, commands, videos),
         VideoEvents::CanPlayThrough => trigger_event(asset_id, CanPlayThrough, commands, videos),
+        VideoEvents::CueChange => {
+            if let Some(ref track) = video.text_track {
+                match track.active_cues() {
+                    Some(cues) => TextTrackCueListIter::new(cues.clone()).for_each(|cue| {
+                        trigger_event(
+                            asset_id,
+                            CueChange {
+                                cue: Some(Cue {
+                                    start_time: cue.start_time(),
+                                    end_time: cue.end_time(),
+                                }),
+                            },
+                            commands,
+                            videos,
+                        )
+                    }),
+                    None => trigger_event(asset_id, CueChange { cue: None }, commands, videos),
+                }
+            }
+        }
         VideoEvents::DurationChanged => trigger_event(asset_id, DurationChanged, commands, videos),
         VideoEvents::Emptied => trigger_event(asset_id, Emptied, commands, videos),
         VideoEvents::Ended => trigger_event(asset_id, Ended, commands, videos),
@@ -150,8 +200,8 @@ pub(crate) fn dispatch_events(
         VideoEvents::LoadedMetadata => trigger_event(
             asset_id,
             LoadedMetadata {
-                width: video.video_width(),
-                height: video.video_height(),
+                width: video.element.video_width(),
+                height: video.element.video_height(),
             },
             commands,
             videos,
@@ -165,8 +215,8 @@ pub(crate) fn dispatch_events(
         VideoEvents::Resize => trigger_event(
             asset_id,
             Resize {
-                width: video.video_width(),
-                height: video.video_height(),
+                width: video.element.video_width(),
+                height: video.element.video_height(),
             },
             commands,
             videos,
@@ -201,5 +251,6 @@ fn trigger_event<E>(
             }
         })
         .for_each(|entity| commands.trigger_targets(video_event, entity));
+
     commands.trigger(video_event);
 }

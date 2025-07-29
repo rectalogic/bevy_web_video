@@ -17,6 +17,10 @@ web-sys = { version = "0.3.77", features = [
     "Window",
     "HtmlVideoElement",
     "HtmlMediaElement",
+    "TextTrack",
+    "TextTrackCueList",
+    "TextTrackKind",
+    "VttCue",
 ] }
 
 [package]

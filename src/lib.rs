@@ -49,6 +49,7 @@ thread_local! {
 struct VideoElement {
     element: web_sys::HtmlVideoElement,
     loaded: bool,
+    text_track: Option<web_sys::TextTrack>,
     enabled_events: EnumSet<VideoEvents>,
 }
 
@@ -92,6 +93,7 @@ impl WebVideoRegistry {
                 VideoElement {
                     element: html_video_element.clone(),
                     loaded: false,
+                    text_track: None,
                     enabled_events: EnumSet::empty(),
                 },
             )
@@ -118,15 +120,44 @@ impl WebVideoRegistry {
                         warn!("Failed to handle video {event_type:?}: {err:?}");
                     }
                 });
-                video_element
-                    .element
-                    .add_event_listener_with_callback(
-                        event_type.into(),
-                        callback.as_ref().unchecked_ref(),
-                    )
-                    .map_err(WebVideoError::from)?;
+                if event_type == VideoEvents::CueChange {
+                    let track = video_element.text_track.get_or_insert_with(|| {
+                        video_element
+                            .element
+                            .add_text_track(web_sys::TextTrackKind::Metadata)
+                    });
+                    track
+                        .add_event_listener_with_callback(
+                            event_type.into(),
+                            callback.as_ref().unchecked_ref(),
+                        )
+                        .map_err(WebVideoError::from)?;
+                } else {
+                    video_element
+                        .element
+                        .add_event_listener_with_callback(
+                            event_type.into(),
+                            callback.as_ref().unchecked_ref(),
+                        )
+                        .map_err(WebVideoError::from)?;
+                }
                 callback.forget();
                 video_element.enabled_events.insert(event_type);
+            }
+            Ok(())
+        })
+    }
+
+    pub fn add_cue(&self, cue: event::Cue, asset_id: AssetId<Image>) -> Result<()> {
+        self.enable_observer(VideoEvents::CueChange, asset_id)?;
+        VIDEO_ELEMENTS.with_borrow(|ve| {
+            if let Some(video_element) = ve.get(&asset_id)
+                && let Some(ref text_track) = video_element.text_track
+            {
+                text_track.add_cue(
+                    &web_sys::VttCue::new(cue.start_time, cue.end_time, "")
+                        .map_err(WebVideoError::from)?,
+                );
             }
             Ok(())
         })
@@ -187,13 +218,7 @@ fn trigger_video_events(
     {
         VIDEO_ELEMENTS.with_borrow(|ve| {
             if let Some(video_element) = ve.get(&asset_id) {
-                event::dispatch_events(
-                    event_type,
-                    asset_id,
-                    &video_element.element,
-                    &mut commands,
-                    videos,
-                );
+                event::dispatch_events(event_type, asset_id, video_element, &mut commands, videos);
             }
         });
     }
