@@ -1,9 +1,11 @@
 use crossbeam_channel::unbounded;
 use enumset::EnumSet;
+use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
     asset::{AsAssetId, RenderAssetUsages},
+    ecs::{component::HookContext, world::DeferredWorld},
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
@@ -23,13 +25,24 @@ use crate::event::{VideoEvent, VideoEventMessage, VideoEvents};
 
 pub mod event;
 mod listener;
+pub use event::LoadedMetadata;
+pub use listener::{EntityAddEventListenerExt, EventListenerApp, ListenerEvent};
+
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
         let (tx, rx) = unbounded();
-        app.insert_resource(WebVideoRegistry { rx, tx })
-            .add_systems(Update, (remove_unused_video_elements, trigger_video_events))
+        app.add_listener_event::<LoadedMetadata>()
+            .insert_resource(WebVideoRegistry { rx, tx })
+            .add_systems(
+                Update,
+                (
+                    handle_new_videos,
+                    remove_unused_video_elements,
+                    trigger_video_events,
+                ),
+            )
             .add_observer(observe_loaded_metadata)
             .add_observer(observe_resize)
             .add_observer(observe_playing);
@@ -46,11 +59,11 @@ thread_local! {
     static VIDEO_ELEMENTS: RefCell<HashMap<AssetId<Image>, VideoElement>> =  RefCell::new(HashMap::default());
 }
 
-#[derive(Clone)]
 struct VideoElement {
     element: web_sys::HtmlVideoElement,
     loaded: bool,
     text_track: Option<web_sys::TextTrack>,
+    listeners: Vec<EventListener>,
     enabled_events: EnumSet<VideoEvents>,
 }
 
@@ -61,18 +74,57 @@ pub struct WebVideoRegistry {
 }
 
 #[derive(Clone, Component)]
-pub struct WebVideo(pub AssetId<Image>);
+#[component(on_remove = on_remove_web_video)]
+pub struct WebVideo(Handle<Image>);
 
-//XXX add a component hook so when this is removed we remove from registry (and dump Asset Unused stuff)
-#[derive(Clone, Component)]
-pub struct WebVideoSink(Handle<Image>);
+impl WebVideo {
+    fn new(images: &Assets<Image>) -> Self {
+        let image = images
+            .get_handle_provider()
+            .reserve_handle()
+            .typed::<Image>();
+        let html_video_element = web_sys::window()
+            .expect_throw("window")
+            .document()
+            .expect_throw("document")
+            .create_element("video")
+            .inspect_err(|e| warn!("{e:?}"))
+            .unwrap_throw()
+            .dyn_into::<web_sys::HtmlVideoElement>()
+            .inspect_err(|e| warn!("{e:?}"))
+            .expect_throw("web_sys::HtmlVideoElement");
 
-impl WebVideoSink {
-    fn new(image: Handle<Image>) -> Self {
+        let asset_id = image.id();
+
+        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+            elements.insert(
+                asset_id,
+                VideoElement {
+                    element: html_video_element,
+                    loaded: false,
+                    text_track: None,
+                    listeners: Vec::new(),
+                    enabled_events: EnumSet::empty(),
+                },
+            )
+        });
+
+        //XXX use on_insert hook (or Added query?) to register listeners for metadata (if size not yet set) (and create image) etc,
         Self(image)
     }
+
+    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
+        let asset_id = self.0.id();
+        VIDEO_ELEMENTS.with_borrow(|elements| elements.get(&asset_id).map(|e| e.element.clone()))
+    }
 }
-impl AsAssetId for WebVideoSink {
+
+fn on_remove_web_video(world: DeferredWorld, context: HookContext) {
+    let asset_id = world.get::<WebVideo>(context.entity).unwrap().0.id();
+    VIDEO_ELEMENTS.with_borrow_mut(|elements| elements.remove(&asset_id));
+}
+
+impl AsAssetId for WebVideo {
     type Asset = Image;
 
     fn as_asset_id(&self) -> AssetId<Self::Asset> {
@@ -83,6 +135,58 @@ impl AsAssetId for WebVideoSink {
 #[derive(Debug)]
 pub struct WebVideoError {
     message: String,
+}
+
+fn handle_new_videos(
+    mut commands: Commands,
+    web_videos: Query<(Entity, &WebVideo), Added<WebVideo>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+        for (entity, web_video) in &web_videos {
+            let asset_id = web_video.as_asset_id();
+            if let Some(video_element) = elements.get(&asset_id) {
+                let ready_state = video_element.element.ready_state();
+                if ready_state >= web_sys::HtmlMediaElement::HAVE_METADATA {
+                    images.insert(
+                        asset_id,
+                        new_image(Extent3d {
+                            width: video_element.element.video_width(),
+                            height: video_element.element.video_height(),
+                            depth_or_array_layers: 1,
+                        }),
+                    );
+                } else {
+                    commands
+                        .entity(entity)
+                        .add_event_listener(web_video, on_loaded_metadata);
+                };
+                //XXX handle playing state/listener
+                // XXX and Resize listener
+            }
+        }
+    });
+}
+
+fn on_loaded_metadata(
+    trigger: Trigger<LoadedMetadata>,
+    web_videos: Query<&WebVideo>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+        if let Ok(web_video) = web_videos.get(trigger.target())
+            && let Some(video_element) = elements.get(&web_video.as_asset_id())
+        {
+            images.insert(
+                web_video.as_asset_id(),
+                new_image(Extent3d {
+                    width: video_element.element.video_width(),
+                    height: video_element.element.video_height(),
+                    depth_or_array_layers: 1,
+                }),
+            );
+        }
+    });
 }
 
 impl WebVideoRegistry {
@@ -179,13 +283,6 @@ impl WebVideoRegistry {
             }
             Ok(())
         })
-    }
-}
-
-impl WebVideo {
-    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        let asset_id = self.0;
-        VIDEO_ELEMENTS.with_borrow(|ve| ve.get(&asset_id).map(|e| e.element.clone()))
     }
 }
 

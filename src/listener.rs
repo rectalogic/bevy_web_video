@@ -1,37 +1,33 @@
 use std::marker::PhantomData;
 
-use bevy::{
-    asset::AsAssetId,
-    ecs::system::{IntoObserverSystem, ObserverSystem},
-    prelude::*,
-};
+use bevy::{asset::AsAssetId, ecs::system::IntoObserverSystem, prelude::*};
 use crossbeam_channel::unbounded;
 use gloo_events::EventListener;
 
-use crate::{VIDEO_ELEMENTS, WebVideoSink};
+use crate::{VIDEO_ELEMENTS, WebVideo};
 
+//XXX use a concrete generic event generic on this trait, so the concrete event can hold an AssetId
 pub trait ListenerEvent: Event {
-    // XXX need str name and AssetId?
     const EVENT_NAME: &'static str;
 
     fn new() -> Self;
 }
 
 #[derive(Resource)]
-struct EventSender<E: ListenerEvent>(crossbeam_channel::Sender<(Entity, E)>);
+struct EventSender<E: ListenerEvent>(crossbeam_channel::Sender<(Option<Entity>, E)>);
 
 #[derive(Resource)]
-struct EventReceiver<E: ListenerEvent>(crossbeam_channel::Receiver<(Entity, E)>);
+struct EventReceiver<E: ListenerEvent>(crossbeam_channel::Receiver<(Option<Entity>, E)>);
 
 #[derive(Event)]
 struct RegisterEventListener<E: ListenerEvent> {
     asset_id: AssetId<Image>,
-    target: Entity,
+    target: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
 impl<E: ListenerEvent> RegisterEventListener<E> {
-    fn new(asset_id: AssetId<Image>, target: Entity) -> Self {
+    fn new(asset_id: AssetId<Image>, target: Option<Entity>) -> Self {
         Self {
             asset_id,
             target,
@@ -71,7 +67,7 @@ fn handle_listener_registration<E: ListenerEvent>(
                     EventListener::new(&video_element.element, E::EVENT_NAME, move |_event| {
                         tx.send((target, E::new()));
                     });
-                //XXX store listener in video_element HashMap
+                video_element.listeners.push(listener);
             }
         });
     }
@@ -79,14 +75,18 @@ fn handle_listener_registration<E: ListenerEvent>(
 
 fn listen_for_events<E: ListenerEvent>(receiver: Res<EventReceiver<E>>, mut commands: Commands) {
     while let Ok((target, event)) = receiver.0.try_recv() {
-        commands.trigger_targets(event, target);
+        if let Some(target) = target {
+            commands.trigger_targets(event, target);
+        } else {
+            commands.trigger(event);
+        }
     }
 }
 
 pub trait EntityAddEventListenerExt {
     fn add_event_listener<E, B, M>(
         &mut self,
-        sink: &WebVideoSink,
+        video: &WebVideo,
         observer: impl IntoObserverSystem<E, B, M>,
     ) -> &mut Self
     where
@@ -97,7 +97,7 @@ pub trait EntityAddEventListenerExt {
 impl EntityAddEventListenerExt for EntityCommands<'_> {
     fn add_event_listener<E, B, M>(
         &mut self,
-        sink: &WebVideoSink,
+        video: &WebVideo,
         observer: impl IntoObserverSystem<E, B, M>,
     ) -> &mut Self
     where
@@ -105,8 +105,10 @@ impl EntityAddEventListenerExt for EntityCommands<'_> {
         B: Bundle,
     {
         let target = self.id();
-        self.commands()
-            .send_event(RegisterEventListener::<E>::new(sink.as_asset_id(), target));
+        self.commands().send_event(RegisterEventListener::<E>::new(
+            video.as_asset_id(),
+            Some(target),
+        ));
         self.observe(observer)
     }
 }
@@ -114,7 +116,7 @@ impl EntityAddEventListenerExt for EntityCommands<'_> {
 impl EntityAddEventListenerExt for EntityWorldMut<'_> {
     fn add_event_listener<E, B, M>(
         &mut self,
-        sink: &WebVideoSink,
+        video: &WebVideo,
         observer: impl IntoObserverSystem<E, B, M>,
     ) -> &mut Self
     where
@@ -123,8 +125,54 @@ impl EntityAddEventListenerExt for EntityWorldMut<'_> {
     {
         let target = self.id();
         self.world_scope(|world| {
-            world.send_event(RegisterEventListener::<E>::new(sink.as_asset_id(), target));
+            world.send_event(RegisterEventListener::<E>::new(
+                video.as_asset_id(),
+                Some(target),
+            ));
         });
         self.observe(observer)
+    }
+}
+
+pub trait AddEventListenerExt {
+    fn add_event_listener<E, B, M>(
+        &mut self,
+        video: &WebVideo,
+        observer: impl IntoObserverSystem<E, B, M>,
+    ) -> &mut Self
+    where
+        E: ListenerEvent,
+        B: Bundle;
+}
+
+impl AddEventListenerExt for Commands<'_, '_> {
+    fn add_event_listener<E, B, M>(
+        &mut self,
+        video: &WebVideo,
+        observer: impl IntoObserverSystem<E, B, M>,
+    ) -> &mut Self
+    where
+        E: ListenerEvent,
+        B: Bundle,
+    {
+        self.send_event(RegisterEventListener::<E>::new(video.as_asset_id(), None));
+        self.add_observer(observer);
+        self
+    }
+}
+
+impl AddEventListenerExt for App {
+    fn add_event_listener<E, B, M>(
+        &mut self,
+        video: &WebVideo,
+        observer: impl IntoObserverSystem<E, B, M>,
+    ) -> &mut Self
+    where
+        E: ListenerEvent,
+        B: Bundle,
+    {
+        self.world_mut()
+            .send_event(RegisterEventListener::<E>::new(video.as_asset_id(), None));
+        self.add_observer(observer)
     }
 }

@@ -1,7 +1,16 @@
 use bevy::prelude::*;
 use enumset::EnumSetType;
 
-use crate::{VideoElement, WebVideo};
+use crate::{ListenerEvent, VideoElement, WebVideo};
+
+#[derive(Event, Copy, Clone, Debug)]
+pub struct LoadedMetadata;
+impl ListenerEvent for LoadedMetadata {
+    const EVENT_NAME: &'static str = "loadedmetadata";
+    fn new() -> Self {
+        Self
+    }
+}
 
 pub(crate) struct VideoEventMessage {
     pub asset_id: AssetId<Image>,
@@ -19,7 +28,7 @@ pub enum VideoEvents {
     Ended,
     Error,
     LoadedData,
-    LoadedMetadata,
+    // LoadedMetadata,
     LoadStart,
     Pause,
     Play,
@@ -71,11 +80,11 @@ pub struct Ended;
 pub struct Error;
 #[derive(Copy, Clone, Debug)]
 pub struct LoadedData;
-#[derive(Copy, Clone, Debug)]
-pub struct LoadedMetadata {
-    pub width: u32,
-    pub height: u32,
-}
+// #[derive(Copy, Clone, Debug)]
+// pub struct LoadedMetadata {
+//     pub width: u32,
+//     pub height: u32,
+// }
 #[derive(Copy, Clone, Debug)]
 pub struct LoadStart;
 #[derive(Copy, Clone, Debug)]
@@ -122,7 +131,7 @@ impl From<VideoEvents> for &'static str {
             VideoEvents::Ended => "ended",
             VideoEvents::Error => "error",
             VideoEvents::LoadedData => "loadeddata",
-            VideoEvents::LoadedMetadata => "loadedmetadata",
+            // VideoEvents::LoadedMetadata => "loadedmetadata",
             VideoEvents::LoadStart => "loadstart",
             VideoEvents::Pause => "pause",
             VideoEvents::Play => "play",
@@ -197,15 +206,15 @@ pub(crate) fn dispatch_events(
         VideoEvents::Ended => trigger_event(asset_id, Ended, commands, videos),
         VideoEvents::Error => trigger_event(asset_id, Error, commands, videos),
         VideoEvents::LoadedData => trigger_event(asset_id, LoadedData, commands, videos),
-        VideoEvents::LoadedMetadata => trigger_event(
-            asset_id,
-            LoadedMetadata {
-                width: video.element.video_width(),
-                height: video.element.video_height(),
-            },
-            commands,
-            videos,
-        ),
+        // VideoEvents::LoadedMetadata => trigger_event(
+        //     asset_id,
+        //     LoadedMetadata {
+        //         width: video.element.video_width(),
+        //         height: video.element.video_height(),
+        //     },
+        //     commands,
+        //     videos,
+        // ),
         VideoEvents::LoadStart => trigger_event(asset_id, LoadStart, commands, videos),
         VideoEvents::Pause => trigger_event(asset_id, Pause, commands, videos),
         VideoEvents::Play => trigger_event(asset_id, Play, commands, videos),
