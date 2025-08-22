@@ -40,12 +40,13 @@ fn setup(
     >,
     images: Res<Assets<Image>>,
 ) -> Result<()> {
-    let (image_handle1, video) = video_registry.new_video_texture(&images)?;
-    video.set_cross_origin(Some("anonymous"));
-    video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
-    video.set_muted(true);
-    video.set_loop(true);
-    let _ = video.play().map_err(WebVideoError::from)?;
+    let web_video = WebVideo::new(&images);
+    let element = web_video.video_element();
+    element.set_cross_origin(Some("anonymous"));
+    element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
+    element.set_muted(true);
+    element.set_loop(true);
+    let _ = element.play().map_err(WebVideoError::from)?;
 
     commands
         .spawn((
