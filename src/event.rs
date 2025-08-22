@@ -17,3 +17,4 @@ macro_rules! new_event_type {
 new_event_type!(LoadedMetadata, "loadedmetadata");
 new_event_type!(Resize, "resize");
 new_event_type!(Playing, "playing");
+new_event_type!(Error, "error");

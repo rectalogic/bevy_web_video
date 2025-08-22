@@ -3,7 +3,6 @@ use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
     asset::RenderAssetUsages,
-    ecs::{component::HookContext, world::DeferredWorld},
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
@@ -20,6 +19,8 @@ pub use listener::{
     AddEventListenerExt, EntityAddEventListenerExt, EventListenerApp, ListenerEvent,
 };
 
+use crate::event::Error;
+
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
@@ -27,6 +28,7 @@ impl Plugin for WebVideoPlugin {
         app.add_listener_event::<LoadedMetadata>()
             .add_listener_event::<Resize>()
             .add_listener_event::<Playing>()
+            .add_listener_event::<Error>()
             .add_systems(Update, (remove_unused_video_elements, handle_new_videos));
     }
 
@@ -170,11 +172,13 @@ fn handle_new_videos(
                     commands.add_event_listener(video_id, on_loaded_metadata);
                 };
                 commands.add_event_listener(video_id, on_resize);
+                commands.add_event_listener(video_id, on_error);
                 if !video_element.element.paused()
                     && !video_element.element.ended()
                     && ready_state >= web_sys::HtmlMediaElement::HAVE_CURRENT_DATA
                     && video_element.element.current_time() > 0.0
                 {
+                    info!("video already playing {video_id:?}"); //XXX
                     video_element.loaded = true;
                 } else {
                     commands.add_event_listener(video_id, on_playing);
@@ -206,12 +210,18 @@ fn on_loaded_metadata(
     handle_resize(trigger.video_id(), &mut images);
 }
 
+fn on_error(trigger: Trigger<ListenerEvent<Error>>) {
+    let video_id = trigger.video_id();
+    warn!("Video {video_id:?} failed with error");
+}
+
 fn on_resize(trigger: Trigger<ListenerEvent<Resize>>, mut images: ResMut<Assets<Image>>) {
     handle_resize(trigger.video_id(), &mut images);
 }
 
 fn on_playing(trigger: Trigger<ListenerEvent<Playing>>) {
     let video_id = trigger.video_id();
+    info!("on_playing for {video_id:?}"); //XXX
     VIDEO_ELEMENTS.with_borrow_mut(|elements| {
         if let Some(video_element) = elements.get_mut(&video_id) {
             video_element.loaded = true;
