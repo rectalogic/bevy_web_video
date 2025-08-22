@@ -9,10 +9,17 @@ use crate::{VIDEO_ELEMENTS, VideoId};
 #[derive(Event)]
 pub struct ListenerEvent<E: EventType> {
     video_id: VideoId,
-    event_type: E,
+    _phantom: PhantomData<E>,
 }
 
 impl<E: EventType> ListenerEvent<E> {
+    fn new(video_id: VideoId) -> Self {
+        Self {
+            video_id,
+            _phantom: PhantomData,
+        }
+    }
+
     pub(crate) fn video_id(&self) -> VideoId {
         self.video_id
     }
@@ -20,8 +27,6 @@ impl<E: EventType> ListenerEvent<E> {
 
 pub trait EventType: Sized + Send + Sync + 'static {
     const EVENT_NAME: &'static str;
-
-    fn new() -> Self;
 }
 
 #[derive(Resource)]
@@ -85,13 +90,7 @@ fn handle_listener_registration<E: EventType>(
                 let tx = sender.0.clone();
                 let listener =
                     EventListener::new(&video_element.element, E::EVENT_NAME, move |_event| {
-                        if let Err(err) = tx.send((
-                            target,
-                            ListenerEvent {
-                                video_id,
-                                event_type: E::new(),
-                            },
-                        )) {
+                        if let Err(err) = tx.send((target, ListenerEvent::<E>::new(video_id))) {
                             warn!("Failed to register listener: {err:?}");
                         };
                     });

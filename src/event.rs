@@ -10,10 +10,6 @@ macro_rules! new_event_type {
 
         impl EventType for $name {
             const EVENT_NAME: &'static str = $event_name;
-
-            fn new() -> Self {
-                Self
-            }
         }
     };
 }

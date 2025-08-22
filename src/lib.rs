@@ -27,7 +27,7 @@ impl Plugin for WebVideoPlugin {
         app.add_listener_event::<LoadedMetadata>()
             .add_listener_event::<Resize>()
             .add_listener_event::<Playing>()
-            .add_systems(Update, handle_new_videos);
+            .add_systems(Update, (remove_unused_video_elements, handle_new_videos));
     }
 
     fn finish(&self, app: &mut App) {
@@ -65,11 +65,14 @@ impl VideoId {
 }
 
 #[derive(Clone, Component)]
-#[component(on_remove = on_remove_web_video)]
 pub struct WebVideo(VideoId);
 
 impl WebVideo {
-    pub fn new(video_id: VideoId) -> Self {
+    pub fn create_video_element(video_id: VideoId) -> Result<web_sys::HtmlVideoElement> {
+        if VIDEO_ELEMENTS.with_borrow(|elements| elements.contains_key(&video_id)) {
+            return Err("Video already exists for {video_id:?}".into());
+        }
+
         let html_video_element = web_sys::window()
             .expect_throw("window")
             .document()
@@ -85,14 +88,17 @@ impl WebVideo {
             elements.insert(
                 video_id,
                 VideoElement {
-                    element: html_video_element,
+                    element: html_video_element.clone(),
                     loaded: false,
                     text_track: None,
                     listeners: Vec::new(),
                 },
             )
         });
+        Ok(html_video_element)
+    }
 
+    pub fn new(video_id: VideoId) -> Self {
         Self(video_id)
     }
 
@@ -112,9 +118,33 @@ impl WebVideo {
     }
 }
 
-fn on_remove_web_video(world: DeferredWorld, context: HookContext) {
-    let video_id = world.get::<WebVideo>(context.entity).unwrap().0;
-    VIDEO_ELEMENTS.with_borrow_mut(|elements| elements.remove(&video_id));
+fn remove_unused_video_elements(
+    mut commands: Commands,
+    mut events: EventReader<AssetEvent<Image>>,
+    web_videos: Query<(Entity, &WebVideo)>,
+) {
+    for event in events.read() {
+        if let AssetEvent::Unused { id: asset_id } = event {
+            let video_id = VideoId::new(*asset_id);
+            if VIDEO_ELEMENTS
+                .with_borrow_mut(|elements| elements.remove(&video_id))
+                .is_some()
+            {
+                web_videos
+                    .iter()
+                    .filter_map(|(entity, web_video)| {
+                        if web_video.video_id() == video_id {
+                            Some(entity)
+                        } else {
+                            None
+                        }
+                    })
+                    .for_each(|entity| {
+                        commands.entity(entity).remove::<WebVideo>();
+                    });
+            }
+        }
+    }
 }
 
 fn handle_new_videos(
