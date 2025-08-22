@@ -53,6 +53,14 @@ pub trait EventListenerApp {
 
 impl EventListenerApp for App {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self {
+        // Check if already initialized
+        if self
+            .world()
+            .get_resource::<Events<ListenerEvent<E>>>()
+            .is_some()
+        {
+            return self;
+        }
         let (tx, rx) = unbounded();
         self.add_event::<ListenerEvent<E>>()
             .add_event::<RegisterEventListener<E>>()
