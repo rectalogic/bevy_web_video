@@ -1248,6 +1248,7 @@ dependencies = [
  "bevy",
  "crossbeam-channel",
  "enumset",
+ "gloo-events",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -2259,6 +2260,16 @@ name = "glob"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
+
+[[package]]
+name = "gloo-events"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27c26fb45f7c385ba980f5fa87ac677e363949e065a083722697ef1b2cc91e41"
+dependencies = [
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "glow"

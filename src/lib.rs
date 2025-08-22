@@ -3,7 +3,7 @@ use enumset::EnumSet;
 use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
-    asset::RenderAssetUsages,
+    asset::{AsAssetId, RenderAssetUsages},
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
@@ -22,6 +22,7 @@ use wgpu_types::{
 use crate::event::{VideoEvent, VideoEventMessage, VideoEvents};
 
 pub mod event;
+mod listener;
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
@@ -61,6 +62,23 @@ pub struct WebVideoRegistry {
 
 #[derive(Clone, Component)]
 pub struct WebVideo(pub AssetId<Image>);
+
+//XXX add a component hook so when this is removed we remove from registry (and dump Asset Unused stuff)
+#[derive(Clone, Component)]
+pub struct WebVideoSink(Handle<Image>);
+
+impl WebVideoSink {
+    fn new(image: Handle<Image>) -> Self {
+        Self(image)
+    }
+}
+impl AsAssetId for WebVideoSink {
+    type Asset = Image;
+
+    fn as_asset_id(&self) -> AssetId<Self::Asset> {
+        self.0.id()
+    }
+}
 
 #[derive(Debug)]
 pub struct WebVideoError {
