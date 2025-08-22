@@ -2,26 +2,20 @@ use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
-    asset::{AsAssetId, RenderAssetUsages},
+    asset::RenderAssetUsages,
     ecs::{component::HookContext, world::DeferredWorld},
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
-        render_asset::RenderAssets,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-        renderer::RenderQueue,
-        texture::GpuImage,
     },
 };
+use event::{LoadedMetadata, Playing, Resize};
 use wasm_bindgen::prelude::*;
-use wgpu_types::{
-    CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, Origin2d,
-    Origin3d, PredefinedColorSpace, TextureAspect,
-};
 
-mod event;
+pub mod event;
 mod listener;
-pub use event::{LoadedMetadata, Playing, Resize};
+mod render;
 pub use listener::{
     AddEventListenerExt, EntityAddEventListenerExt, EventListenerApp, ListenerEvent,
 };
@@ -38,13 +32,16 @@ impl Plugin for WebVideoPlugin {
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.add_systems(Render, render_videos.in_set(RenderSet::PrepareResources));
+        render_app.add_systems(
+            Render,
+            render::render_videos.in_set(RenderSet::PrepareResources),
+        );
     }
 }
 
 // wasm on web is single threaded, so this should be OK
 thread_local! {
-    static VIDEO_ELEMENTS: RefCell<HashMap<AssetId<Image>, VideoElement>> =  RefCell::new(HashMap::default());
+    static VIDEO_ELEMENTS: RefCell<HashMap<VideoId, VideoElement>> =  RefCell::new(HashMap::default());
 }
 
 struct VideoElement {
@@ -54,16 +51,25 @@ struct VideoElement {
     listeners: Vec<EventListener>,
 }
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+pub struct VideoId(AssetId<Image>);
+
+impl VideoId {
+    pub fn new_image() -> Image {
+        Image::default_uninit()
+    }
+
+    pub fn new(image_id: impl Into<AssetId<Image>>) -> Self {
+        VideoId(image_id.into())
+    }
+}
+
 #[derive(Clone, Component)]
 #[component(on_remove = on_remove_web_video)]
-pub struct WebVideo(Handle<Image>);
+pub struct WebVideo(VideoId);
 
 impl WebVideo {
-    pub fn new(images: &Assets<Image>) -> Self {
-        let image = images
-            .get_handle_provider()
-            .reserve_handle()
-            .typed::<Image>();
+    pub fn new(video_id: VideoId) -> Self {
         let html_video_element = web_sys::window()
             .expect_throw("window")
             .document()
@@ -75,11 +81,9 @@ impl WebVideo {
             .inspect_err(|e| warn!("{e:?}"))
             .expect_throw("web_sys::HtmlVideoElement");
 
-        let asset_id = image.id();
-
         VIDEO_ELEMENTS.with_borrow_mut(|elements| {
             elements.insert(
-                asset_id,
+                video_id,
                 VideoElement {
                     element: html_video_element,
                     loaded: false,
@@ -89,14 +93,18 @@ impl WebVideo {
             )
         });
 
-        Self(image)
+        Self(video_id)
+    }
+
+    fn video_id(&self) -> VideoId {
+        self.0
     }
 
     pub fn video_element(&self) -> web_sys::HtmlVideoElement {
-        let asset_id = self.0.id();
+        let video_id = self.0;
         VIDEO_ELEMENTS.with_borrow(|elements| {
             elements
-                .get(&asset_id)
+                .get(&video_id)
                 .expect_throw("Missing video element")
                 .element
                 .clone()
@@ -105,16 +113,8 @@ impl WebVideo {
 }
 
 fn on_remove_web_video(world: DeferredWorld, context: HookContext) {
-    let asset_id = world.get::<WebVideo>(context.entity).unwrap().0.id();
-    VIDEO_ELEMENTS.with_borrow_mut(|elements| elements.remove(&asset_id));
-}
-
-impl AsAssetId for WebVideo {
-    type Asset = Image;
-
-    fn as_asset_id(&self) -> AssetId<Self::Asset> {
-        self.0.id()
-    }
+    let video_id = world.get::<WebVideo>(context.entity).unwrap().0;
+    VIDEO_ELEMENTS.with_borrow_mut(|elements| elements.remove(&video_id));
 }
 
 fn handle_new_videos(
@@ -124,12 +124,12 @@ fn handle_new_videos(
 ) {
     VIDEO_ELEMENTS.with_borrow_mut(|elements| {
         for web_video in &web_videos {
-            let asset_id = web_video.as_asset_id();
-            if let Some(video_element) = elements.get_mut(&asset_id) {
+            let video_id = web_video.video_id();
+            if let Some(video_element) = elements.get_mut(&video_id) {
                 let ready_state = video_element.element.ready_state();
                 if ready_state >= web_sys::HtmlMediaElement::HAVE_METADATA {
                     images.insert(
-                        asset_id,
+                        video_id.0,
                         new_image(Extent3d {
                             width: video_element.element.video_width(),
                             height: video_element.element.video_height(),
@@ -137,9 +137,9 @@ fn handle_new_videos(
                         }),
                     );
                 } else {
-                    commands.add_event_listener(web_video, on_loaded_metadata);
+                    commands.add_event_listener(video_id, on_loaded_metadata);
                 };
-                commands.add_event_listener(web_video, on_resize);
+                commands.add_event_listener(video_id, on_resize);
                 if !video_element.element.paused()
                     && !video_element.element.ended()
                     && ready_state >= web_sys::HtmlMediaElement::HAVE_CURRENT_DATA
@@ -147,18 +147,18 @@ fn handle_new_videos(
                 {
                     video_element.loaded = true;
                 } else {
-                    commands.add_event_listener(web_video, on_playing);
+                    commands.add_event_listener(video_id, on_playing);
                 }
             }
         }
     });
 }
 
-fn handle_resize(asset_id: AssetId<Image>, images: &mut Assets<Image>) {
+fn handle_resize(video_id: VideoId, images: &mut Assets<Image>) {
     VIDEO_ELEMENTS.with_borrow(|elements| {
-        if let Some(video_element) = elements.get(&asset_id) {
+        if let Some(video_element) = elements.get(&video_id) {
             images.insert(
-                asset_id,
+                video_id.0,
                 new_image(Extent3d {
                     width: video_element.element.video_width(),
                     height: video_element.element.video_height(),
@@ -173,17 +173,17 @@ fn on_loaded_metadata(
     trigger: Trigger<ListenerEvent<LoadedMetadata>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    handle_resize(trigger.asset_id(), &mut images);
+    handle_resize(trigger.video_id(), &mut images);
 }
 
 fn on_resize(trigger: Trigger<ListenerEvent<Resize>>, mut images: ResMut<Assets<Image>>) {
-    handle_resize(trigger.asset_id(), &mut images);
+    handle_resize(trigger.video_id(), &mut images);
 }
 
 fn on_playing(trigger: Trigger<ListenerEvent<Playing>>) {
-    let asset_id = trigger.asset_id();
+    let video_id = trigger.video_id();
     VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-        if let Some(video_element) = elements.get_mut(&asset_id) {
+        if let Some(video_element) = elements.get_mut(&video_id) {
             video_element.loaded = true;
         }
     });
@@ -219,39 +219,4 @@ impl From<JsValue> for WebVideoError {
             message: format!("{value:?}"),
         }
     }
-}
-
-fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
-    VIDEO_ELEMENTS.with_borrow(|ve| {
-        ve.iter()
-            .filter_map(|(asset_id, video_element)| {
-                if video_element.loaded
-                    && let Some(gpu_image) = images.get(*asset_id)
-                {
-                    Some((gpu_image, video_element))
-                } else {
-                    None
-                }
-            })
-            .for_each(|(gpu_image, video_element)| {
-                queue.copy_external_image_to_texture(
-                    &CopyExternalImageSourceInfo {
-                        source: ExternalImageSource::HTMLVideoElement(
-                            video_element.element.clone(),
-                        ),
-                        origin: Origin2d::ZERO,
-                        flip_y: false,
-                    },
-                    CopyExternalImageDestInfo {
-                        texture: &gpu_image.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: TextureAspect::All,
-                        color_space: PredefinedColorSpace::Srgb,
-                        premultiplied_alpha: true,
-                    },
-                    gpu_image.size,
-                );
-            });
-    });
 }

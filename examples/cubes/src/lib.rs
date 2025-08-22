@@ -4,7 +4,10 @@ use bevy::{
     pbr::decal::{ForwardDecal, ForwardDecalMaterial, ForwardDecalMaterialExt},
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
-use bevy_web_video::{WebVideo, WebVideoError, WebVideoPlugin, WebVideoRegistry, event};
+use bevy_web_video::{
+    EntityAddEventListenerExt, ListenerEvent, VideoId, WebVideo, WebVideoError, WebVideoPlugin,
+    event,
+};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -32,15 +35,16 @@ struct Animated;
 
 fn setup(
     mut commands: Commands,
-    video_registry: Res<WebVideoRegistry>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     #[cfg(feature = "webgpu")] mut decal_materials: ResMut<
         Assets<ForwardDecalMaterial<StandardMaterial>>,
     >,
-    images: Res<Assets<Image>>,
+    mut images: ResMut<Assets<Image>>,
 ) -> Result<()> {
-    let web_video = WebVideo::new(&images);
+    let image = images.add(VideoId::new_image());
+    let video_id = VideoId::new(&image);
+    let web_video = WebVideo::new(video_id);
     let element = web_video.video_element();
     element.set_cross_origin(Some("anonymous"));
     element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
@@ -51,34 +55,35 @@ fn setup(
     commands
         .spawn((
             Animated,
-            WebVideo(image_handle1.id()),
+            web_video,
             Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(image_handle1.clone()),
+                base_color_texture: Some(image),
                 ..default()
             })),
             Transform::from_xyz(-0.75, 0.0, 0.0),
         ))
-        .observe(
-            |trigger: Trigger<event::VideoEvent<event::LoadedMetadata>>,
-             mut videos: Query<&MeshMaterial3d<StandardMaterial>, With<WebVideo>>,
+        .add_event_listener(
+            video_id,
+            |trigger: Trigger<ListenerEvent<event::LoadedMetadata>>,
+             mut videos: Query<(&WebVideo, &MeshMaterial3d<StandardMaterial>)>,
              mut materials: ResMut<Assets<StandardMaterial>>| {
-                if let Ok(mesh_material) = videos.get_mut(trigger.target())
+                if let Ok((web_video, mesh_material)) = videos.get_mut(trigger.target())
                     && let Some(material) = materials.get_mut(mesh_material)
                 {
-                    let event::VideoEvent {
-                        event: event::LoadedMetadata { width, height },
-                        ..
-                    } = trigger.event();
+                    let element = web_video.video_element();
+                    let width = element.video_width();
+                    let height = element.video_height();
+
                     // Scale uv transform to match video aspect ratio.
                     // Zoom in so video fills the face.
                     if width > height {
-                        let aspect = *height as f32 / *width as f32;
+                        let aspect = height as f32 / width as f32;
                         material.uv_transform =
                             Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
                                 * Affine2::from_scale(Vec2::new(aspect, 1.0));
                     } else {
-                        let aspect = *width as f32 / *height as f32;
+                        let aspect = width as f32 / height as f32;
                         material.uv_transform =
                             Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
                                 * Affine2::from_scale(Vec2::new(1.0, aspect));
