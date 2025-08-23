@@ -10,8 +10,10 @@ use wgpu_types::{
 use crate::VIDEO_ELEMENTS;
 
 pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
-    VIDEO_ELEMENTS.with_borrow(|ve| {
-        ve.iter()
+    VIDEO_ELEMENTS.with_borrow(|elements| {
+        elements
+            .elements
+            .iter()
             .filter_map(|(video_id, video_element)| {
                 if video_element.loaded {
                     images

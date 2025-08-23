@@ -3,6 +3,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use bevy::{
     asset::RenderAssetUsages,
+    ecs::world::CommandQueue,
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
@@ -18,17 +19,26 @@ mod render;
 use listener::AddEventListenerExt;
 pub use listener::{EntityAddEventListenerExt, EventListenerApp, ListenerEvent};
 
-use crate::event::Error;
+use crate::{event::Error, listener::ListenerCommand};
 
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        app.add_listener_event::<LoadedMetadata>()
+        let rx = VIDEO_ELEMENTS.with_borrow(|elements| elements.rx.clone());
+        app.insert_resource(CommandReceiver(rx))
+            .add_listener_event::<LoadedMetadata>()
             .add_listener_event::<Resize>()
             .add_listener_event::<Playing>()
             .add_listener_event::<Error>()
-            .add_systems(Update, (remove_unused_video_elements, handle_new_videos));
+            .add_systems(
+                Update,
+                (
+                    remove_unused_video_elements,
+                    handle_commands,
+                    handle_new_videos,
+                ),
+            );
     }
 
     fn finish(&self, app: &mut App) {
@@ -42,7 +52,24 @@ impl Plugin for WebVideoPlugin {
 
 // wasm on web is single threaded, so this should be OK
 thread_local! {
-    static VIDEO_ELEMENTS: RefCell<HashMap<VideoId, VideoElement>> =  RefCell::new(HashMap::default());
+    static VIDEO_ELEMENTS: RefCell<VideoElements> =  RefCell::new(VideoElements::new());
+}
+
+struct VideoElements {
+    tx: crossbeam_channel::Sender<ListenerCommand>,
+    rx: crossbeam_channel::Receiver<ListenerCommand>,
+    elements: HashMap<VideoId, VideoElement>,
+}
+
+impl VideoElements {
+    fn new() -> Self {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        Self {
+            tx,
+            rx,
+            elements: HashMap::default(),
+        }
+    }
 }
 
 struct VideoElement {
@@ -51,6 +78,9 @@ struct VideoElement {
     text_track: Option<web_sys::TextTrack>,
     listeners: Vec<EventListener>,
 }
+
+#[derive(Resource)]
+struct CommandReceiver(crossbeam_channel::Receiver<ListenerCommand>);
 
 pub trait AssetsVideoIdExt {
     fn new_video_texture(&mut self) -> (Handle<Image>, VideoId, web_sys::HtmlVideoElement);
@@ -73,7 +103,7 @@ impl AssetsVideoIdExt for Assets<Image> {
             .expect_throw("web_sys::HtmlVideoElement");
 
         VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-            elements.insert(
+            elements.elements.insert(
                 video_id,
                 VideoElement {
                     element: html_video_element.clone(),
@@ -106,11 +136,18 @@ impl WebVideo {
         let video_id = self.0;
         VIDEO_ELEMENTS.with_borrow(|elements| {
             elements
+                .elements
                 .get(&video_id)
                 .expect_throw("Missing video element")
                 .element
                 .clone()
         })
+    }
+}
+
+fn handle_commands(mut commands: Commands, receiver: Res<CommandReceiver>) {
+    while let Ok(command) = receiver.0.try_recv() {
+        commands.queue(command);
     }
 }
 
@@ -123,7 +160,7 @@ fn remove_unused_video_elements(
         if let AssetEvent::Unused { id: asset_id } = event {
             let video_id = VideoId(*asset_id);
             if VIDEO_ELEMENTS
-                .with_borrow_mut(|elements| elements.remove(&video_id))
+                .with_borrow_mut(|elements| elements.elements.remove(&video_id))
                 .is_some()
             {
                 web_videos
@@ -151,7 +188,7 @@ fn handle_new_videos(
     VIDEO_ELEMENTS.with_borrow_mut(|elements| {
         for web_video in &web_videos {
             let video_id = web_video.video_id();
-            if let Some(video_element) = elements.get_mut(&video_id) {
+            if let Some(video_element) = elements.elements.get_mut(&video_id) {
                 let ready_state = video_element.element.ready_state();
                 if ready_state >= web_sys::HtmlMediaElement::HAVE_METADATA {
                     images.insert(
@@ -184,7 +221,7 @@ fn handle_new_videos(
 
 fn handle_resize(video_id: VideoId, images: &mut Assets<Image>) {
     VIDEO_ELEMENTS.with_borrow(|elements| {
-        if let Some(video_element) = elements.get(&video_id) {
+        if let Some(video_element) = elements.elements.get(&video_id) {
             images.insert(
                 video_id.0,
                 new_image(Extent3d {
@@ -217,7 +254,7 @@ fn on_playing(trigger: Trigger<ListenerEvent<Playing>>) {
     let video_id = trigger.video_id();
     info!("on_playing for {video_id:?}"); //XXX
     VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-        if let Some(video_element) = elements.get_mut(&video_id) {
+        if let Some(video_element) = elements.elements.get_mut(&video_id) {
             video_element.loaded = true;
         }
     });
