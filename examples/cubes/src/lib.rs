@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EntityAddEventListenerExt, ListenerEvent, VideoId, WebVideo, WebVideoError, WebVideoPlugin,
-    event,
+    AssetsVideoIdExt, EntityAddEventListenerExt, ListenerEvent, VideoId, WebVideo, WebVideoError,
+    WebVideoPlugin, event,
 };
 use wasm_bindgen::prelude::*;
 
@@ -42,9 +42,7 @@ fn setup(
     >,
     mut images: ResMut<Assets<Image>>,
 ) -> Result<()> {
-    let image_handle = images.add(VideoId::new_image());
-    let video_id = VideoId::new(&image_handle);
-    let video = WebVideo::create_video_element(video_id)?;
+    let (image_handle, video_id, video) = images.new_video_texture();
     video.set_cross_origin(Some("anonymous"));
     video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
     video.set_muted(true);
@@ -96,16 +94,14 @@ fn setup(
     {
         let video_id1 = video_id;
         let image_handle1 = image_handle;
-        let image_handle2 = images.add(VideoId::new_image());
-        let video_id2 = VideoId::new(&image_handle2);
-        let video = WebVideo::create_video_element(video_id2)?;
-        video.set_cross_origin(Some("anonymous"));
-        video.set_src(
+        let (image_handle2, video_id2, video2) = images.new_video_texture();
+        video2.set_cross_origin(Some("anonymous"));
+        video2.set_src(
             "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
         );
-        video.set_muted(true);
-        video.set_loop(true);
-        let _ = video.play().map_err(WebVideoError::from)?;
+        video2.set_muted(true);
+        video2.set_loop(true);
+        let _ = video2.play().map_err(WebVideoError::from)?;
 
         let parent = commands
             .spawn((

@@ -53,27 +53,14 @@ struct VideoElement {
     listeners: Vec<EventListener>,
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
-pub struct VideoId(AssetId<Image>);
-
-impl VideoId {
-    pub fn new_image() -> Image {
-        Image::default_uninit()
-    }
-
-    pub fn new(image_id: impl Into<AssetId<Image>>) -> Self {
-        VideoId(image_id.into())
-    }
+pub trait AssetsVideoIdExt {
+    fn new_video_texture(&mut self) -> (Handle<Image>, VideoId, web_sys::HtmlVideoElement);
 }
 
-#[derive(Clone, Component)]
-pub struct WebVideo(VideoId);
-
-impl WebVideo {
-    pub fn create_video_element(video_id: VideoId) -> Result<web_sys::HtmlVideoElement> {
-        if VIDEO_ELEMENTS.with_borrow(|elements| elements.contains_key(&video_id)) {
-            return Err("Video already exists for {video_id:?}".into());
-        }
+impl AssetsVideoIdExt for Assets<Image> {
+    fn new_video_texture(&mut self) -> (Handle<Image>, VideoId, web_sys::HtmlVideoElement) {
+        let image_handle = self.get_handle_provider().reserve_handle().typed::<Image>();
+        let video_id = VideoId(image_handle.id());
 
         let html_video_element = web_sys::window()
             .expect_throw("window")
@@ -97,9 +84,17 @@ impl WebVideo {
                 },
             )
         });
-        Ok(html_video_element)
+        (image_handle, video_id, html_video_element)
     }
+}
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+pub struct VideoId(AssetId<Image>);
+
+#[derive(Clone, Component)]
+pub struct WebVideo(VideoId);
+
+impl WebVideo {
     pub fn new(video_id: VideoId) -> Self {
         Self(video_id)
     }
@@ -127,7 +122,7 @@ fn remove_unused_video_elements(
 ) {
     for event in events.read() {
         if let AssetEvent::Unused { id: asset_id } = event {
-            let video_id = VideoId::new(*asset_id);
+            let video_id = VideoId(*asset_id);
             if VIDEO_ELEMENTS
                 .with_borrow_mut(|elements| elements.remove(&video_id))
                 .is_some()
