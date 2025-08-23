@@ -9,13 +9,15 @@ use crate::{VIDEO_ELEMENTS, VideoId};
 #[derive(Event)]
 pub struct ListenerEvent<E: EventType> {
     video_id: VideoId,
+    target: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
 impl<E: EventType> ListenerEvent<E> {
-    fn new(video_id: VideoId) -> Self {
+    fn new(video_id: VideoId, target: Option<Entity>) -> Self {
         Self {
             video_id,
+            target,
             _phantom: PhantomData,
         }
     }
@@ -30,27 +32,10 @@ pub trait EventType: Sized + Send + Sync + 'static {
 }
 
 #[derive(Resource)]
-struct EventSender<E: EventType>(crossbeam_channel::Sender<(Option<Entity>, ListenerEvent<E>)>);
+struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEvent<E>>);
 
 #[derive(Resource)]
-struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<(Option<Entity>, ListenerEvent<E>)>);
-
-#[derive(Event)]
-struct RegisterEventListener<E: EventType> {
-    video_id: VideoId,
-    target: Option<Entity>,
-    _phantom: PhantomData<E>,
-}
-
-impl<E: EventType> RegisterEventListener<E> {
-    fn new(video_id: VideoId, target: Option<Entity>) -> Self {
-        Self {
-            video_id,
-            target,
-            _phantom: PhantomData,
-        }
-    }
-}
+struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
 
 pub trait EventListenerApp {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self;
@@ -68,46 +53,38 @@ impl EventListenerApp for App {
         }
         let (tx, rx) = unbounded();
         self.add_event::<ListenerEvent<E>>()
-            .add_event::<RegisterEventListener<E>>()
             .insert_resource(EventSender::<E>(tx))
             .insert_resource(EventReceiver::<E>(rx))
-            .add_systems(
-                Update,
-                (handle_listener_registration::<E>, listen_for_events::<E>),
-            )
-    }
-}
-
-fn handle_listener_registration<E: EventType>(
-    mut registrations: EventReader<RegisterEventListener<E>>,
-    sender: Res<EventSender<E>>,
-) {
-    for registration in registrations.read() {
-        let target = registration.target;
-        let video_id = registration.video_id;
-        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-            if let Some(video_element) = elements.get_mut(&video_id) {
-                let tx = sender.0.clone();
-                let listener =
-                    EventListener::new(&video_element.element, E::EVENT_NAME, move |_event| {
-                        if let Err(err) = tx.send((target, ListenerEvent::<E>::new(video_id))) {
-                            warn!("Failed to register listener: {err:?}");
-                        };
-                    });
-                video_element.listeners.push(listener);
-            }
-        });
+            .add_systems(Update, listen_for_events::<E>)
     }
 }
 
 fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands: Commands) {
-    while let Ok((target, event)) = receiver.0.try_recv() {
-        if let Some(target) = target {
+    while let Ok(event) = receiver.0.try_recv() {
+        if let Some(target) = event.target {
             commands.trigger_targets(event, target);
         } else {
             commands.trigger(event);
         }
     }
+}
+
+fn register_event_listener<E: EventType>(
+    video_id: VideoId,
+    target: Option<Entity>,
+    sender: crossbeam_channel::Sender<ListenerEvent<E>>,
+) {
+    VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+        if let Some(video_element) = elements.get_mut(&video_id) {
+            let listener =
+                EventListener::new(&video_element.element, E::EVENT_NAME, move |_event| {
+                    if let Err(err) = sender.send(ListenerEvent::<E>::new(video_id, target)) {
+                        warn!("Failed to register listener: {err:?}");
+                    };
+                });
+            video_element.listeners.push(listener);
+        }
+    });
 }
 
 pub trait EntityAddEventListenerExt {
@@ -131,11 +108,12 @@ impl EntityAddEventListenerExt for EntityCommands<'_> {
         E: EventType,
         B: Bundle,
     {
-        //XXX all of these should verify video_id is in the registry first, and expect_throw
-
         let target = self.id();
-        self.commands()
-            .send_event(RegisterEventListener::<E>::new(video_id, Some(target)));
+        self.commands().queue(move |world: &mut World| {
+            if let Some(sender) = world.get_resource::<EventSender<E>>() {
+                register_event_listener(video_id, Some(target), sender.0.clone());
+            }
+        });
         self.observe(observer)
     }
 }
@@ -152,13 +130,15 @@ impl EntityAddEventListenerExt for EntityWorldMut<'_> {
     {
         let target = self.id();
         self.world_scope(|world| {
-            world.send_event(RegisterEventListener::<E>::new(video_id, Some(target)));
+            if let Some(sender) = world.get_resource::<EventSender<E>>() {
+                register_event_listener(video_id, Some(target), sender.0.clone());
+            }
         });
         self.observe(observer)
     }
 }
 
-pub trait AddEventListenerExt {
+pub(crate) trait AddEventListenerExt {
     fn add_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
@@ -179,24 +159,12 @@ impl AddEventListenerExt for Commands<'_, '_> {
         E: EventType,
         B: Bundle,
     {
-        self.send_event(RegisterEventListener::<E>::new(video_id, None));
+        self.queue(move |world: &mut World| {
+            if let Some(sender) = world.get_resource::<EventSender<E>>() {
+                register_event_listener(video_id, None, sender.0.clone());
+            }
+        });
         self.add_observer(observer);
         self
-    }
-}
-
-impl AddEventListenerExt for App {
-    fn add_event_listener<E, B, M>(
-        &mut self,
-        video_id: VideoId,
-        observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
-    ) -> &mut Self
-    where
-        E: EventType,
-        B: Bundle,
-    {
-        self.world_mut()
-            .send_event(RegisterEventListener::<E>::new(video_id, None));
-        self.add_observer(observer)
     }
 }

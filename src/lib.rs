@@ -15,9 +15,8 @@ use wasm_bindgen::prelude::*;
 pub mod event;
 mod listener;
 mod render;
-pub use listener::{
-    AddEventListenerExt, EntityAddEventListenerExt, EventListenerApp, ListenerEvent,
-};
+use listener::AddEventListenerExt;
+pub use listener::{EntityAddEventListenerExt, EventListenerApp, ListenerEvent};
 
 use crate::event::Error;
 
