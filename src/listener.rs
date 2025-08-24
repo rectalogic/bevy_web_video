@@ -67,23 +67,8 @@ impl EventListenerApp for App {
     }
 }
 
-fn add_video_event_listener(video_id: VideoId, event_name: &'static str, command: ListenerCommand) {
-    VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-        if let Some(video_element) = elements.elements.get_mut(&video_id) {
-            let tx = elements.tx.clone();
-            let callback = move |_event: &web_sys::Event| {
-                if let Err(err) = tx.send(command.clone()) {
-                    warn!("Failed to register listener: {err:?}");
-                };
-            };
-            let listener = EventListener::new(&video_element.element, event_name, callback);
-            video_element.listeners.push(listener);
-        }
-    });
-}
-
-pub trait EntityAddEventListenerExt {
-    fn add_event_listener<E, B, M>(
+pub trait EntityAddVideoEventListenerExt {
+    fn add_video_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
@@ -93,8 +78,8 @@ pub trait EntityAddEventListenerExt {
         B: Bundle;
 }
 
-impl EntityAddEventListenerExt for EntityCommands<'_> {
-    fn add_event_listener<E, B, M>(
+impl EntityAddVideoEventListenerExt for EntityCommands<'_> {
+    fn add_video_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
@@ -104,19 +89,27 @@ impl EntityAddEventListenerExt for EntityCommands<'_> {
         B: Bundle,
     {
         let target = self.id();
-        add_video_event_listener(
-            video_id,
-            E::EVENT_NAME,
-            ListenerCommand::new(move |world| {
-                world.trigger_targets(ListenerEvent::<E>::new(video_id, Some(target)), target);
-            }),
-        );
+        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+            if let Some(video_element) = elements.elements.get_mut(&video_id) {
+                let tx = elements.tx.clone();
+                video_element.add_event_listener(
+                    E::EVENT_NAME,
+                    tx,
+                    ListenerCommand::new(move |world| {
+                        world.trigger_targets(
+                            ListenerEvent::<E>::new(video_id, Some(target)),
+                            target,
+                        );
+                    }),
+                );
+            }
+        });
         self.observe(observer)
     }
 }
 
-impl EntityAddEventListenerExt for EntityWorldMut<'_> {
-    fn add_event_listener<E, B, M>(
+impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
+    fn add_video_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
@@ -126,19 +119,27 @@ impl EntityAddEventListenerExt for EntityWorldMut<'_> {
         B: Bundle,
     {
         let target = self.id();
-        add_video_event_listener(
-            video_id,
-            E::EVENT_NAME,
-            ListenerCommand::new(move |world| {
-                world.trigger_targets(ListenerEvent::<E>::new(video_id, Some(target)), target);
-            }),
-        );
+        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+            if let Some(video_element) = elements.elements.get_mut(&video_id) {
+                let tx = elements.tx.clone();
+                video_element.add_event_listener(
+                    E::EVENT_NAME,
+                    tx,
+                    ListenerCommand::new(move |world| {
+                        world.trigger_targets(
+                            ListenerEvent::<E>::new(video_id, Some(target)),
+                            target,
+                        );
+                    }),
+                );
+            }
+        });
         self.observe(observer)
     }
 }
 
-pub(crate) trait AddEventListenerExt {
-    fn add_event_listener<E, B, M>(
+pub(crate) trait CommandsAddEventListenerExt {
+    fn add_video_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
@@ -148,8 +149,8 @@ pub(crate) trait AddEventListenerExt {
         B: Bundle;
 }
 
-impl AddEventListenerExt for Commands<'_, '_> {
-    fn add_event_listener<E, B, M>(
+impl CommandsAddEventListenerExt for Commands<'_, '_> {
+    fn add_video_event_listener<E, B, M>(
         &mut self,
         video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
@@ -158,13 +159,18 @@ impl AddEventListenerExt for Commands<'_, '_> {
         E: EventType,
         B: Bundle,
     {
-        add_video_event_listener(
-            video_id,
-            E::EVENT_NAME,
-            ListenerCommand::new(move |world| {
-                world.trigger(ListenerEvent::<E>::new(video_id, None));
-            }),
-        );
+        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
+            if let Some(video_element) = elements.elements.get_mut(&video_id) {
+                let tx = elements.tx.clone();
+                video_element.add_event_listener(
+                    E::EVENT_NAME,
+                    tx,
+                    ListenerCommand::new(move |world| {
+                        world.trigger(ListenerEvent::<E>::new(video_id, None));
+                    }),
+                );
+            }
+        });
         self.add_observer(observer);
         self
     }

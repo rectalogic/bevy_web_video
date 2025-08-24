@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    AssetsVideoIdExt, EntityAddEventListenerExt, ListenerEvent, VideoId, WebVideo, WebVideoError,
-    WebVideoPlugin, event,
+    AssetsVideoIdExt, EntityAddVideoEventListenerExt, ListenerEvent, VideoId, WebVideo,
+    WebVideoError, WebVideoPlugin, event,
 };
 use wasm_bindgen::prelude::*;
 
@@ -60,7 +60,7 @@ fn setup(
             })),
             Transform::from_xyz(-0.75, 0.0, 0.0),
         ))
-        .add_event_listener(
+        .add_video_event_listener(
             video_id,
             |trigger: Trigger<ListenerEvent<event::LoadedMetadata>>,
              mut videos: Query<(&WebVideo, &MeshMaterial3d<StandardMaterial>)>,
@@ -206,7 +206,7 @@ fn video_decal(
             MeshMaterial3d(decal_material),
             transform,
         ))
-        .add_event_listener(
+        .add_video_event_listener(
             video_id,
             |trigger: Trigger<ListenerEvent<event::LoadedMetadata>>,
              mut decals: Query<(&WebVideo, &mut Transform), With<ForwardDecal>>| {
