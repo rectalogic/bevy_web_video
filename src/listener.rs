@@ -1,29 +1,28 @@
-use std::{marker::PhantomData, rc::Rc, sync::Arc};
-
+use crate::{
+    WebVideo,
+    asset::{Registry, RegistryId, VideoSource},
+};
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
-use crossbeam_channel::unbounded;
-use gloo_events::EventListener;
-
-use crate::{VIDEO_ELEMENTS, VideoId};
+use std::{marker::PhantomData, sync::Arc};
 
 #[derive(Event)]
 pub struct ListenerEvent<E: EventType> {
-    video_id: VideoId,
+    registry_id: RegistryId,
     target: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
 impl<E: EventType> ListenerEvent<E> {
-    fn new(video_id: VideoId, target: Option<Entity>) -> Self {
+    fn new(registry_id: RegistryId, target: Option<Entity>) -> Self {
         Self {
-            video_id,
+            registry_id,
             target,
             _phantom: PhantomData,
         }
     }
 
-    pub(crate) fn video_id(&self) -> VideoId {
-        self.video_id
+    pub(crate) fn registry_id(&self) -> RegistryId {
+        self.registry_id
     }
 }
 
@@ -49,28 +48,9 @@ impl Command for ListenerCommand {
     }
 }
 
-pub trait EventListenerApp {
-    fn add_listener_event<E: EventType>(&mut self) -> &mut Self;
-}
-
-impl EventListenerApp for App {
-    fn add_listener_event<E: EventType>(&mut self) -> &mut Self {
-        // Check if already initialized
-        if self
-            .world()
-            .get_resource::<Events<ListenerEvent<E>>>()
-            .is_some()
-        {
-            return self;
-        }
-        self.add_event::<ListenerEvent<E>>()
-    }
-}
-
 pub trait EntityAddVideoEventListenerExt {
     fn add_video_event_listener<E, B, M>(
         &mut self,
-        video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
@@ -81,97 +61,57 @@ pub trait EntityAddVideoEventListenerExt {
 impl EntityAddVideoEventListenerExt for EntityCommands<'_> {
     fn add_video_event_listener<E, B, M>(
         &mut self,
-        video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
         E: EventType,
         B: Bundle,
     {
-        let target = self.id();
-        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-            if let Some(video_element) = elements.elements.get_mut(&video_id) {
-                let tx = elements.tx.clone();
-                video_element.add_event_listener(
-                    E::EVENT_NAME,
-                    tx,
-                    ListenerCommand::new(move |world| {
-                        world.trigger_targets(
-                            ListenerEvent::<E>::new(video_id, Some(target)),
-                            target,
-                        );
-                    }),
-                );
-            }
-        });
-        self.observe(observer)
+        self.queue(|mut entity: EntityWorldMut| {
+            entity.add_video_event_listener(observer);
+        })
     }
 }
 
 impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
     fn add_video_event_listener<E, B, M>(
         &mut self,
-        video_id: VideoId,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
         E: EventType,
         B: Bundle,
     {
-        let target = self.id();
-        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-            if let Some(video_element) = elements.elements.get_mut(&video_id) {
-                let tx = elements.tx.clone();
-                video_element.add_event_listener(
-                    E::EVENT_NAME,
-                    tx,
-                    ListenerCommand::new(move |world| {
-                        world.trigger_targets(
-                            ListenerEvent::<E>::new(video_id, Some(target)),
-                            target,
-                        );
-                    }),
-                );
-            }
-        });
+        if let Some(WebVideo(source_handle)) = self.get::<WebVideo>()
+            && let Some(sources) = self.get_resource::<Assets<VideoSource>>()
+            && let Some(source) = sources.get(source_handle)
+        {
+            Registry::with_borrow_mut(|registry| {
+                let entity = self.id();
+                let registry_id = source.registry_id();
+                let tx = registry.sender();
+                if let Some(video_element) = registry.get_mut(&registry_id) {
+                    video_element.add_event_listener(
+                        E::EVENT_NAME,
+                        tx,
+                        ListenerCommand::new(move |world| {
+                            world.trigger_targets(
+                                ListenerEvent::<E>::new(registry_id, Some(entity)),
+                                entity,
+                            );
+                        }),
+                    );
+                } else {
+                    warn!("VideoSource asset {source:?} not found");
+                }
+            });
+        } else {
+            warn!(
+                "Failed to add video event listener to entity {}, no WebVideo VideoSource found",
+                self.id()
+            );
+        }
+
         self.observe(observer)
-    }
-}
-
-pub(crate) trait CommandsAddEventListenerExt {
-    fn add_video_event_listener<E, B, M>(
-        &mut self,
-        video_id: VideoId,
-        observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
-    ) -> &mut Self
-    where
-        E: EventType,
-        B: Bundle;
-}
-
-impl CommandsAddEventListenerExt for Commands<'_, '_> {
-    fn add_video_event_listener<E, B, M>(
-        &mut self,
-        video_id: VideoId,
-        observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
-    ) -> &mut Self
-    where
-        E: EventType,
-        B: Bundle,
-    {
-        VIDEO_ELEMENTS.with_borrow_mut(|elements| {
-            if let Some(video_element) = elements.elements.get_mut(&video_id) {
-                let tx = elements.tx.clone();
-                video_element.add_event_listener(
-                    E::EVENT_NAME,
-                    tx,
-                    ListenerCommand::new(move |world| {
-                        world.trigger(ListenerEvent::<E>::new(video_id, None));
-                    }),
-                );
-            }
-        });
-        self.add_observer(observer);
-        self
     }
 }

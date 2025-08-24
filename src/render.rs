@@ -7,17 +7,16 @@ use wgpu_types::{
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
 
-use crate::VIDEO_ELEMENTS;
+use crate::asset::Registry;
 
 pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
-    VIDEO_ELEMENTS.with_borrow(|elements| {
-        elements
-            .elements
+    Registry::with_borrow(|registry| {
+        registry
             .iter()
-            .filter_map(|(video_id, video_element)| {
-                if video_element.loaded {
+            .filter_map(|video_element| {
+                if video_element.is_loaded() {
                     images
-                        .get(video_id.0)
+                        .get(video_element.target_texture_id())
                         .map(|gpu_image| (gpu_image, video_element))
                 } else {
                     None
@@ -26,9 +25,7 @@ pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>
             .for_each(|(gpu_image, video_element)| {
                 queue.copy_external_image_to_texture(
                     &CopyExternalImageSourceInfo {
-                        source: ExternalImageSource::HTMLVideoElement(
-                            video_element.element.clone(),
-                        ),
+                        source: ExternalImageSource::HTMLVideoElement(video_element.element()),
                         origin: Origin2d::ZERO,
                         flip_y: false,
                     },
