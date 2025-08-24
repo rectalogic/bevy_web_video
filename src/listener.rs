@@ -1,6 +1,7 @@
 use crate::{
     WebVideo,
-    asset::{Registry, RegistryId, VideoSource},
+    asset::VideoSource,
+    registry::{Registry, RegistryId},
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 use std::{marker::PhantomData, sync::Arc};

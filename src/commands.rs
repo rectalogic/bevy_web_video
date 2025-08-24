@@ -1,9 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{
-    WebVideo,
-    asset::{Registry, VideoSource},
-};
+use crate::{WebVideo, asset::VideoSource, registry::Registry};
 
 pub trait EntityCommandsWithVideoElementExt {
     fn with_video_element(

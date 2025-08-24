@@ -1,3 +1,4 @@
+use crate::registry::Registry;
 use bevy::{
     prelude::*,
     render::{render_asset::RenderAssets, renderer::RenderQueue, texture::GpuImage},
@@ -6,8 +7,6 @@ use wgpu_types::{
     CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, Origin2d,
     Origin3d, PredefinedColorSpace, TextureAspect,
 };
-
-use crate::asset::Registry;
 
 pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
     Registry::with_borrow(|registry| {

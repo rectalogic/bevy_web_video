@@ -9,14 +9,11 @@ mod asset;
 mod commands;
 pub mod event;
 mod listener;
+mod registry;
 mod render;
 pub use listener::{EntityAddVideoEventListenerExt, ListenerEvent};
 
-use crate::{
-    asset::{Registry, VideoSource},
-    event::Error,
-    listener::ListenerCommand,
-};
+use crate::{asset::VideoSource, event::Error, listener::ListenerCommand, registry::Registry};
 
 pub struct WebVideoPlugin;
 
