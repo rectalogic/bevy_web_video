@@ -1,6 +1,33 @@
+use std::marker::PhantomData;
+
 use bevy::prelude::*;
 
-use crate::listener::EventType;
+use crate::registry::RegistryId;
+
+#[derive(Event)]
+pub struct ListenerEvent<E: EventType> {
+    registry_id: RegistryId,
+    target: Option<Entity>,
+    _phantom: PhantomData<E>,
+}
+
+impl<E: EventType> ListenerEvent<E> {
+    pub(crate) fn new(registry_id: RegistryId, target: Option<Entity>) -> Self {
+        Self {
+            registry_id,
+            target,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn registry_id(&self) -> RegistryId {
+        self.registry_id
+    }
+}
+
+pub trait EventType: Sized + Send + Sync + 'static {
+    const EVENT_NAME: &'static str;
+}
 
 #[macro_export]
 macro_rules! new_event_type {

@@ -2,7 +2,6 @@ use bevy::{
     prelude::*,
     render::{Render, RenderApp, RenderSet},
 };
-use event::{LoadedMetadata, Playing, Resize};
 use wasm_bindgen::prelude::*;
 
 mod asset;
@@ -11,9 +10,9 @@ pub mod event;
 mod listener;
 mod registry;
 mod render;
-pub use listener::{EntityAddVideoEventListenerExt, ListenerEvent};
+pub use listener::EntityAddVideoEventListenerExt;
 
-use crate::{asset::VideoSource, event::Error, listener::ListenerCommand, registry::Registry};
+use crate::{asset::VideoSource, listener::ListenerCommand, registry::Registry};
 
 pub struct WebVideoPlugin;
 
@@ -22,10 +21,10 @@ impl Plugin for WebVideoPlugin {
         let rx = Registry::with_borrow(|registry| registry.receiver());
         app.init_asset::<VideoSource>()
             .insert_resource(CommandReceiver(rx))
-            .add_event::<ListenerEvent<LoadedMetadata>>()
-            .add_event::<ListenerEvent<Resize>>()
-            .add_event::<ListenerEvent<Playing>>()
-            .add_event::<ListenerEvent<Error>>()
+            .add_event::<event::ListenerEvent<event::LoadedMetadata>>()
+            .add_event::<event::ListenerEvent<event::Resize>>()
+            .add_event::<event::ListenerEvent<event::Playing>>()
+            .add_event::<event::ListenerEvent<event::Error>>()
             .add_systems(Update, handle_commands);
     }
 

@@ -1,35 +1,11 @@
 use crate::{
     WebVideo,
     asset::VideoSource,
-    registry::{Registry, RegistryId},
+    event::{EventType, ListenerEvent},
+    registry::Registry,
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
-use std::{marker::PhantomData, sync::Arc};
-
-#[derive(Event)]
-pub struct ListenerEvent<E: EventType> {
-    registry_id: RegistryId,
-    target: Option<Entity>,
-    _phantom: PhantomData<E>,
-}
-
-impl<E: EventType> ListenerEvent<E> {
-    fn new(registry_id: RegistryId, target: Option<Entity>) -> Self {
-        Self {
-            registry_id,
-            target,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub(crate) fn registry_id(&self) -> RegistryId {
-        self.registry_id
-    }
-}
-
-pub trait EventType: Sized + Send + Sync + 'static {
-    const EVENT_NAME: &'static str;
-}
+use std::sync::Arc;
 
 pub trait ListenerCallback: FnMut(&mut World) + Send + Sync + 'static {}
 impl<C: FnMut(&mut World) + Send + Sync + 'static> ListenerCallback for C {}

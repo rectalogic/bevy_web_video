@@ -1,6 +1,6 @@
 use crate::{
-    event,
-    listener::{EventType, ListenerCommand},
+    event::{self, EventType},
+    listener::ListenerCommand,
     registry::{Registry, RegistryId, VideoElement},
 };
 use bevy::{
