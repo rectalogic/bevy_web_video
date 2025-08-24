@@ -6,6 +6,7 @@ use crate::{
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 use std::sync::Arc;
+use wasm_bindgen::UnwrapThrowExt;
 
 pub trait ListenerCallback: FnMut(&mut World) + Send + Sync + 'static {}
 impl<C: FnMut(&mut World) + Send + Sync + 'static> ListenerCallback for C {}
@@ -14,14 +15,14 @@ impl<C: FnMut(&mut World) + Send + Sync + 'static> ListenerCallback for C {}
 pub struct ListenerCommand(Arc<Box<dyn ListenerCallback>>);
 
 impl ListenerCommand {
-    pub fn new(command: impl ListenerCallback) -> Self {
-        Self(Arc::new(Box::new(command)))
+    pub fn new(callback: impl ListenerCallback) -> Self {
+        Self(Arc::new(Box::new(callback)))
     }
 }
 
 impl Command for ListenerCommand {
     fn apply(mut self, world: &mut World) {
-        Arc::get_mut(&mut self.0).unwrap()(world);
+        Arc::get_mut(&mut self.0).expect_throw("Failed to get mutable reference to command")(world);
     }
 }
 

@@ -34,6 +34,9 @@ pub fn start() {
 #[derive(Component)]
 struct Animated;
 
+#[derive(Component)]
+struct VideoA;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -50,12 +53,11 @@ fn setup(
         .spawn(WebVideo::new(source))
         .add_video_event_listener(
             |trigger: Trigger<ListenerEvent<event::LoadedMetadata>>,
-             mut videos: Query<(&WebVideo, &MeshMaterial3d<StandardMaterial>)>,
+             mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
              mut materials: ResMut<Assets<StandardMaterial>>| {
-                if let Ok((web_video, mesh_material)) = videos.get_mut(trigger.target())
-                    && let Some(material) = materials.get_mut(mesh_material)
+                if let Some(material) = materials.get_mut(&mesh_material.0)
                 {
-                    let element = web_video.video_element();
+                    let Some(element) = trigger.video_element() else { return;};
                     let width = element.video_width();
                     let height = element.video_height();
 
@@ -86,6 +88,7 @@ fn setup(
 
     commands.spawn((
         Animated,
+        VideoA,
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(image),

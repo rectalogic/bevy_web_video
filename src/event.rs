@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::prelude::*;
 
-use crate::registry::RegistryId;
+use crate::registry::{Registry, RegistryId};
 
 #[derive(Event)]
 pub struct ListenerEvent<E: EventType> {
@@ -22,6 +22,10 @@ impl<E: EventType> ListenerEvent<E> {
 
     pub(crate) fn registry_id(&self) -> RegistryId {
         self.registry_id
+    }
+
+    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
+        Registry::with_borrow(|registry| registry.get(&self.registry_id).map(|e| e.element.clone()))
     }
 }
 
