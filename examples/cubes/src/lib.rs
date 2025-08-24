@@ -5,8 +5,9 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    AssetsVideoIdExt, EntityAddVideoEventListenerExt, ListenerEvent, VideoId, WebVideo,
-    WebVideoError, WebVideoPlugin, event,
+    AddVideoTextureExt, EntityAddVideoEventListenerExt, EntityCommandsWithVideoElementExt,
+    VideoSource, WebVideo, WebVideoError, WebVideoPlugin,
+    event::{self, ListenerEvent},
 };
 use wasm_bindgen::prelude::*;
 
@@ -41,27 +42,13 @@ fn setup(
         Assets<ForwardDecalMaterial<StandardMaterial>>,
     >,
     mut images: ResMut<Assets<Image>>,
+    mut sources: ResMut<Assets<VideoSource>>,
 ) -> Result<()> {
-    let (image_handle, video_id, video) = images.new_video_texture();
-    video.set_cross_origin(Some("anonymous"));
-    video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
-    video.set_muted(true);
-    video.set_loop(true);
-    let _ = video.play().map_err(WebVideoError::from)?;
-
+    let image = images.add_video_texture();
+    let source = sources.add(VideoSource::new(image.clone()));
     commands
-        .spawn((
-            Animated,
-            WebVideo::new(video_id),
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(image_handle.clone()),
-                ..default()
-            })),
-            Transform::from_xyz(-0.75, 0.0, 0.0),
-        ))
+        .spawn(WebVideo::new(source))
         .add_video_event_listener(
-            video_id,
             |trigger: Trigger<ListenerEvent<event::LoadedMetadata>>,
              mut videos: Query<(&WebVideo, &MeshMaterial3d<StandardMaterial>)>,
              mut materials: ResMut<Assets<StandardMaterial>>| {
@@ -87,7 +74,25 @@ fn setup(
                     }
                 }
             },
-        );
+        ).with_video_element(|video| {
+            let Some(video) = video else {return Err("missing video".into());};
+            video.set_cross_origin(Some("anonymous"));
+            video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
+            video.set_muted(true);
+            video.set_loop(true);
+            let _ = video.play().map_err(WebVideoError::from)?;
+            Ok(())
+        });
+
+    commands.spawn((
+        Animated,
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(image),
+            ..default()
+        })),
+        Transform::from_xyz(-0.75, 0.0, 0.0),
+    ));
 
     // Decals broken on webgl2 https://github.com/bevyengine/bevy/issues/19177
     #[cfg(feature = "webgpu")]
