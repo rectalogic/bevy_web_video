@@ -22,11 +22,25 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(Event)]
-pub struct VideoCreated(RegistryId);
+pub struct VideoCreated {
+    registry_id: RegistryId,
+    source_id: AssetId<VideoSource>,
+}
 
 impl VideoCreated {
+    fn new(registry_id: RegistryId, source_id: AssetId<VideoSource>) -> Self {
+        Self {
+            registry_id,
+            source_id,
+        }
+    }
+
+    pub fn video_source(&self) -> AssetId<VideoSource> {
+        self.source_id
+    }
+
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        Registry::with_borrow(|registry| registry.get(&self.0).map(|e| e.element()))
+        Registry::with_borrow(|registry| registry.get(&self.registry_id).map(|e| e.element()))
     }
 }
 
@@ -119,7 +133,9 @@ fn add_listeners(
                         None
                     }
                 })
-                .for_each(|entity| commands.trigger_targets(VideoCreated(registry_id), entity));
+                .for_each(|entity| {
+                    commands.trigger_targets(VideoCreated::new(registry_id, asset_id), entity)
+                });
         }
     }
 }

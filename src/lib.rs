@@ -44,6 +44,10 @@ impl WebVideo {
         Self(source)
     }
 
+    pub fn source_id(&self) -> AssetId<VideoSource> {
+        self.0.id()
+    }
+
     pub(crate) fn source(&self) -> &Handle<VideoSource> {
         &self.0
     }
