@@ -1,13 +1,7 @@
-use std::marker::PhantomData;
-
-use bevy::{
-    asset::RenderAssetUsages,
-    prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-};
+use crate::registry::{Registry, RegistryId};
+use bevy::prelude::*;
 use crossbeam_channel::unbounded;
-
-use crate::registry::{Registry, RegistryId, VideoElement};
+use std::marker::PhantomData;
 
 pub trait EventListenerApp {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self;
@@ -74,22 +68,26 @@ pub trait EventType: Copy + Clone + Send + Sync + 'static {
     const EVENT_NAME: &'static str;
 }
 
-#[macro_export]
-macro_rules! new_event_type {
-    ($name:ident, $event_name:literal) => {
-        #[derive(Event, Copy, Clone, Debug)]
-        pub struct $name;
+pub mod events {
+    use super::*;
 
-        impl EventType for $name {
-            const EVENT_NAME: &'static str = $event_name;
-        }
-    };
+    #[macro_export]
+    macro_rules! new_event_type {
+        ($name:ident, $event_name:literal) => {
+            #[derive(Event, Copy, Clone, Debug)]
+            pub struct $name;
+
+            impl EventType for $name {
+                const EVENT_NAME: &'static str = $event_name;
+            }
+        };
+    }
+
+    new_event_type!(LoadedMetadata, "loadedmetadata");
+    new_event_type!(Resize, "resize");
+    new_event_type!(Playing, "playing");
+    new_event_type!(Error, "error");
 }
-
-new_event_type!(LoadedMetadata, "loadedmetadata");
-new_event_type!(Resize, "resize");
-new_event_type!(Playing, "playing");
-new_event_type!(Error, "error");
 
 fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands: Commands) {
     while let Ok(event) = receiver.0.try_recv() {
@@ -99,51 +97,4 @@ fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands
             commands.trigger(event);
         }
     }
-}
-
-fn resize_image(video_element: &VideoElement, images: &mut Assets<Image>) {
-    let mut image = Image::new_uninit(
-        Extent3d {
-            width: video_element.element().video_width(),
-            height: video_element.element().video_height(),
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-    images.insert(video_element.target_texture_id(), image);
-}
-
-fn on_loaded_metadata(
-    trigger: Trigger<ListenerEvent<LoadedMetadata>>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    Registry::with_borrow(|registry| {
-        if let Some(video_element) = registry.get(&trigger.registry_id()) {
-            resize_image(video_element, &mut images);
-        }
-    });
-}
-
-fn on_resize(trigger: Trigger<ListenerEvent<Resize>>, mut images: ResMut<Assets<Image>>) {
-    Registry::with_borrow(|registry| {
-        if let Some(video_element) = registry.get(&trigger.registry_id()) {
-            resize_image(video_element, &mut images);
-        }
-    });
-}
-
-fn on_error(trigger: Trigger<ListenerEvent<Error>>) {
-    let video = trigger.video_element();
-    warn!("Video {video:?} failed with error");
-}
-
-fn on_playing(trigger: Trigger<ListenerEvent<Playing>>) {
-    Registry::with_borrow_mut(|registry| {
-        if let Some(video_element) = registry.get_mut(&trigger.registry_id()) {
-            video_element.set_loaded();
-        }
-    });
 }

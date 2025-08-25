@@ -6,15 +6,15 @@ use wasm_bindgen::prelude::*;
 
 mod asset;
 mod commands;
-pub mod event;
+mod event;
 mod listener;
 mod registry;
 mod render;
 
-use crate::event::EventListenerApp;
 pub use crate::{
     asset::{AddVideoTextureExt, VideoSource},
     commands::EntityCommandsWithVideoElementExt,
+    event::{EventListenerApp, EventType, ListenerEvent, events},
     listener::EntityAddVideoEventListenerExt,
 };
 
@@ -23,10 +23,10 @@ pub struct WebVideoPlugin;
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(asset::plugin)
-            .add_listener_event::<event::LoadedMetadata>()
-            .add_listener_event::<event::Resize>()
-            .add_listener_event::<event::Playing>()
-            .add_listener_event::<event::Error>();
+            .add_listener_event::<events::LoadedMetadata>()
+            .add_listener_event::<events::Resize>()
+            .add_listener_event::<events::Playing>()
+            .add_listener_event::<events::Error>();
     }
 
     fn finish(&self, app: &mut App) {
