@@ -3,11 +3,11 @@ use bevy::prelude::*;
 use crossbeam_channel::unbounded;
 use std::marker::PhantomData;
 
-pub trait EventListenerApp {
+pub trait EventListenerAppExt {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self;
 }
 
-impl EventListenerApp for App {
+impl EventListenerAppExt for App {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self {
         // Check if already initialized
         if self.world().contains_resource::<Events<ListenerEvent<E>>>() {

@@ -1,4 +1,5 @@
 use crate::{
+    WebVideo,
     event::{EventSender, ListenerEvent, events},
     registry::{Registry, RegistryId, VideoElement},
 };
@@ -12,14 +13,21 @@ use wasm_bindgen::prelude::*;
 
 pub fn plugin(app: &mut App) {
     app.init_asset::<VideoSource>()
+        .add_event::<VideoCreated>()
         .add_observer(on_loadedmetadata)
         .add_observer(on_resize)
         .add_observer(on_error)
         .add_observer(on_playing)
-        //XXX timing issues, need this to run before user configures the video
-        // XXX add a new Event, user can observe it, trigger it after we add our listeners
-        //XXX needs to be targeted, how do we communicate target entity?
         .add_systems(PostUpdate, add_listeners.after(AssetEvents));
+}
+
+#[derive(Event)]
+pub struct VideoCreated(RegistryId);
+
+impl VideoCreated {
+    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
+        Registry::with_borrow(|registry| registry.get(&self.0).map(|e| e.element()))
+    }
 }
 
 #[derive(Asset, Debug, TypePath)]
@@ -64,8 +72,11 @@ impl Drop for VideoSource {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_listeners(
+    mut commands: Commands,
     mut events: EventReader<AssetEvent<VideoSource>>,
+    web_videos: Query<(Entity, &WebVideo)>,
     sources: Res<Assets<VideoSource>>,
     loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
     resize_event_sender: Res<EventSender<events::Resize>>,
@@ -73,11 +84,11 @@ fn add_listeners(
     error_event_sender: Res<EventSender<events::Error>>,
 ) {
     for event in events.read() {
-        if let AssetEvent::Added { id: asset_id } = event
-            && let Some(source) = sources.get(*asset_id)
+        if let AssetEvent::Added { id: asset_id } = *event
+            && let Some(source) = sources.get(asset_id)
         {
+            let registry_id = source.registry_id();
             Registry::with_borrow_mut(|registry| {
-                let registry_id = source.registry_id();
                 if let Some(video_element) = registry.get_mut(&registry_id) {
                     video_element.add_event_listener(
                         ListenerEvent::<events::LoadedMetadata>::new(registry_id, None),
@@ -97,6 +108,18 @@ fn add_listeners(
                     );
                 }
             });
+
+            // Now that we have registered our listeners, allow user to access the element
+            web_videos
+                .iter()
+                .filter_map(|(entity, web_video)| {
+                    if web_video.source().id() == asset_id {
+                        Some(entity)
+                    } else {
+                        None
+                    }
+                })
+                .for_each(|entity| commands.trigger_targets(VideoCreated(registry_id), entity));
         }
     }
 }

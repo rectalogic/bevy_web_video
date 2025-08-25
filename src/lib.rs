@@ -11,11 +11,9 @@ mod registry;
 mod render;
 
 pub use crate::{
-    asset::VideoSource,
-    event::{EventListenerApp, EventType, ListenerEvent, events},
-    extensions::{
-        AddVideoTextureExt, EntityAddVideoEventListenerExt, EntityCommandsWithVideoElementExt,
-    },
+    asset::{VideoCreated, VideoSource},
+    event::{EventListenerAppExt, EventType, ListenerEvent, events},
+    extensions::{AddVideoTextureExt, EntityAddVideoEventListenerExt},
 };
 
 pub struct WebVideoPlugin;
@@ -44,6 +42,10 @@ pub struct WebVideo(Handle<VideoSource>);
 impl WebVideo {
     pub fn new(source: Handle<VideoSource>) -> Self {
         Self(source)
+    }
+
+    pub(crate) fn source(&self) -> &Handle<VideoSource> {
+        &self.0
     }
 }
 
