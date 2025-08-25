@@ -11,25 +11,22 @@ mod listener;
 mod registry;
 mod render;
 
+use crate::event::EventListenerApp;
 pub use crate::{
     asset::{AddVideoTextureExt, VideoSource},
     commands::EntityCommandsWithVideoElementExt,
     listener::EntityAddVideoEventListenerExt,
 };
-use crate::{listener::ListenerCommand, registry::Registry};
 
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        let rx = Registry::with_borrow(|registry| registry.receiver());
-        app.init_asset::<VideoSource>()
-            .insert_resource(CommandReceiver(rx))
-            .add_event::<event::ListenerEvent<event::LoadedMetadata>>()
-            .add_event::<event::ListenerEvent<event::Resize>>()
-            .add_event::<event::ListenerEvent<event::Playing>>()
-            .add_event::<event::ListenerEvent<event::Error>>()
-            .add_systems(Update, handle_commands);
+        app.add_plugins(asset::plugin)
+            .add_listener_event::<event::LoadedMetadata>()
+            .add_listener_event::<event::Resize>()
+            .add_listener_event::<event::Playing>()
+            .add_listener_event::<event::Error>();
     }
 
     fn finish(&self, app: &mut App) {
@@ -41,21 +38,12 @@ impl Plugin for WebVideoPlugin {
     }
 }
 
-#[derive(Resource)]
-struct CommandReceiver(crossbeam_channel::Receiver<ListenerCommand>);
-
 #[derive(Clone, Component)]
 pub struct WebVideo(Handle<VideoSource>);
 
 impl WebVideo {
     pub fn new(source: Handle<VideoSource>) -> Self {
         Self(source)
-    }
-}
-
-fn handle_commands(mut commands: Commands, receiver: Res<CommandReceiver>) {
-    while let Ok(command) = receiver.0.try_recv() {
-        commands.queue(command);
     }
 }
 

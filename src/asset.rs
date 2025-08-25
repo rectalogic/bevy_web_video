@@ -1,14 +1,15 @@
 use crate::{
-    event::{self, EventType},
-    listener::ListenerCommand,
+    event::{self, EventSender, ListenerEvent},
     registry::{Registry, RegistryId, VideoElement},
 };
-use bevy::{
-    asset::RenderAssetUsages,
-    prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-};
+use bevy::{asset::AssetEvents, prelude::*};
 use wasm_bindgen::prelude::*;
+
+pub fn plugin(app: &mut App) {
+    app.init_asset::<VideoSource>()
+        //XXX timing issues, need this to run before user configures the video
+        .add_systems(PostUpdate, add_listeners.after(AssetEvents));
+}
 
 #[derive(Asset, Debug, TypePath)]
 pub struct VideoSource {
@@ -29,65 +30,11 @@ impl VideoSource {
             .inspect_err(|e| warn!("{e:?}"))
             .expect_throw("web_sys::HtmlVideoElement");
 
-        let registry_index = Registry::with_borrow_mut(|registry| {
-            let width = html_video_element.video_width();
-            let height = html_video_element.video_height();
-
-            let mut video_element = VideoElement {
-                target_texture_id: target_texture.id(),
-                element: html_video_element,
-                loaded: false,
-                listeners: Vec::new(),
-            };
-
-            let resize_callback = {
-                let target_texture = target_texture.clone();
-                ListenerCommand::new(move |world| {
-                    if let Some(mut images) = world.get_resource_mut::<Assets<Image>>() {
-                        images.insert(
-                            &target_texture,
-                            new_image(Extent3d {
-                                width,
-                                height,
-                                depth_or_array_layers: 1,
-                            }),
-                        );
-                    }
-                })
-            };
-
-            let tx = registry.tx.clone();
-            video_element.add_event_listener(
-                event::LoadedMetadata::EVENT_NAME,
-                tx,
-                resize_callback.clone(),
-            );
-
-            let tx = registry.tx.clone();
-            video_element.add_event_listener(event::Resize::EVENT_NAME, tx, resize_callback);
-
-            let registry_id = registry.allocate_id();
-
-            let tx = registry.tx.clone();
-            video_element.add_event_listener(
-                event::Playing::EVENT_NAME,
-                tx,
-                ListenerCommand::new(move |_world| {
-                    Registry::with_borrow_mut(|registry| {
-                        if let Some(video_element) = registry.elements.get_mut(&registry_id) {
-                            video_element.loaded = true;
-                        }
-                    });
-                }),
-            );
-
-            registry.insert(registry_id, video_element);
-            registry_id
-        });
-
+        let video_element = VideoElement::new(target_texture.id(), html_video_element);
+        let registry_id = Registry::with_borrow_mut(|registry| registry.add(video_element));
         Self {
             target_texture,
-            registry_id: registry_index,
+            registry_id,
         }
     }
 
@@ -106,6 +53,43 @@ impl Drop for VideoSource {
     }
 }
 
+fn add_listeners(
+    mut events: EventReader<AssetEvent<VideoSource>>,
+    sources: Res<Assets<VideoSource>>,
+    loadedmetadata_event_sender: Res<EventSender<event::LoadedMetadata>>,
+    resize_event_sender: Res<EventSender<event::Resize>>,
+    playing_event_sender: Res<EventSender<event::Playing>>,
+    error_event_sender: Res<EventSender<event::Error>>,
+) {
+    for event in events.read() {
+        if let AssetEvent::Added { id: asset_id } = event
+            && let Some(source) = sources.get(*asset_id)
+        {
+            Registry::with_borrow_mut(|registry| {
+                let registry_id = source.registry_id();
+                if let Some(video_element) = registry.get_mut(&registry_id) {
+                    video_element.add_event_listener(
+                        ListenerEvent::<event::LoadedMetadata>::new(registry_id, None),
+                        loadedmetadata_event_sender.tx(),
+                    );
+                    video_element.add_event_listener(
+                        ListenerEvent::<event::Resize>::new(registry_id, None),
+                        resize_event_sender.tx(),
+                    );
+                    video_element.add_event_listener(
+                        ListenerEvent::<event::Playing>::new(registry_id, None),
+                        playing_event_sender.tx(),
+                    );
+                    video_element.add_event_listener(
+                        ListenerEvent::<event::Error>::new(registry_id, None),
+                        error_event_sender.tx(),
+                    );
+                }
+            });
+        }
+    }
+}
+
 pub trait AddVideoTextureExt {
     fn add_video_texture(&mut self) -> Handle<Image>;
 }
@@ -114,15 +98,4 @@ impl AddVideoTextureExt for Assets<Image> {
     fn add_video_texture(&mut self) -> Handle<Image> {
         self.get_handle_provider().reserve_handle().typed::<Image>()
     }
-}
-
-pub(crate) fn new_image(size: Extent3d) -> Image {
-    let mut image = Image::new_uninit(
-        size,
-        TextureDimension::D2,
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-    image
 }

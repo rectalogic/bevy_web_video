@@ -1,7 +1,7 @@
 use crate::{
     WebVideo,
     asset::VideoSource,
-    event::{EventType, ListenerEvent},
+    event::{EventSender, EventType, ListenerEvent},
     registry::Registry,
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
@@ -60,36 +60,31 @@ impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
         E: EventType,
         B: Bundle,
     {
-        if let Some(WebVideo(source_handle)) = self.get::<WebVideo>()
-            && let Some(sources) = self.get_resource::<Assets<VideoSource>>()
-            && let Some(source) = sources.get(source_handle)
-        {
-            Registry::with_borrow_mut(|registry| {
-                let entity = self.id();
-                let registry_id = source.registry_id();
-                let tx = registry.sender();
-                if let Some(video_element) = registry.get_mut(&registry_id) {
-                    video_element.add_event_listener(
-                        E::EVENT_NAME,
-                        tx,
-                        ListenerCommand::new(move |world| {
-                            world.trigger_targets(
-                                ListenerEvent::<E>::new(registry_id, Some(entity)),
-                                entity,
-                            );
-                        }),
-                    );
-                } else {
-                    warn!("VideoSource asset {source:?} not found");
-                }
-            });
-        } else {
-            warn!(
-                "Failed to add video event listener to entity {}, no WebVideo VideoSource found",
-                self.id()
-            );
-        }
+        let target = self.id();
+        let Some(event_sender) = self.get_resource::<EventSender<E>>() else {
+            warn!("Video event type {} not registered", E::EVENT_NAME);
+            return self;
+        };
+        let Some(sources) = self.get_resource::<Assets<VideoSource>>() else {
+            return self;
+        };
+        let Some(WebVideo(source_handle)) = self.get::<WebVideo>() else {
+            warn!("No WebVideo component found on entity {}", target);
+            return self;
+        };
+        let Some(source) = sources.get(source_handle) else {
+            return self;
+        };
+        let tx = event_sender.tx();
+        let registry_id = source.registry_id();
 
-        self.observe(observer)
+        Registry::with_borrow_mut(|registry| {
+            if let Some(video_element) = registry.get_mut(&registry_id) {
+                video_element
+                    .add_event_listener(ListenerEvent::<E>::new(registry_id, Some(target)), tx);
+                self.observe(observer);
+            }
+        });
+        self
     }
 }

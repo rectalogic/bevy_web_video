@@ -21,6 +21,7 @@ impl EntityCommandsWithVideoElementExt for EntityCommands<'_> {
 }
 
 impl EntityCommandsWithVideoElementExt for EntityWorldMut<'_> {
+    //XXX this needs to happen after we add internal listeners - use an observer and trigger an event?
     fn with_video_element(
         &mut self,
         f: impl FnOnce(Option<web_sys::HtmlVideoElement>) -> Result<()> + Send + Sync + 'static,

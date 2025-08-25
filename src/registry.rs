@@ -1,4 +1,7 @@
-use crate::listener::ListenerCommand;
+use crate::{
+    event::{EventType, ListenerEvent},
+    listener::ListenerCommand,
+};
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
@@ -22,18 +25,13 @@ impl RegistryId {
 }
 
 pub struct Registry {
-    pub(crate) tx: crossbeam_channel::Sender<ListenerCommand>,
-    pub(crate) rx: crossbeam_channel::Receiver<ListenerCommand>,
     pub(crate) next_id: RegistryId,
     pub(crate) elements: HashMap<RegistryId, VideoElement>,
 }
 
 impl Registry {
     pub(crate) fn new() -> Self {
-        let (tx, rx) = crossbeam_channel::unbounded();
         Self {
-            tx,
-            rx,
             next_id: RegistryId::new(),
             elements: HashMap::default(),
         }
@@ -84,24 +82,25 @@ impl Registry {
     {
         REGISTRY.with_borrow_mut(f)
     }
-
-    pub fn sender(&self) -> crossbeam_channel::Sender<ListenerCommand> {
-        self.tx.clone()
-    }
-
-    pub fn receiver(&self) -> crossbeam_channel::Receiver<ListenerCommand> {
-        self.rx.clone()
-    }
 }
 
 pub struct VideoElement {
-    pub(crate) target_texture_id: AssetId<Image>,
-    pub(crate) element: web_sys::HtmlVideoElement,
-    pub(crate) loaded: bool,
-    pub(crate) listeners: Vec<EventListener>,
+    target_texture_id: AssetId<Image>,
+    element: web_sys::HtmlVideoElement,
+    loaded: bool,
+    listeners: Vec<EventListener>,
 }
 
 impl VideoElement {
+    pub fn new(target_texture_id: AssetId<Image>, element: web_sys::HtmlVideoElement) -> Self {
+        Self {
+            target_texture_id,
+            element,
+            loaded: false,
+            listeners: Vec::default(),
+        }
+    }
+
     pub fn element(&self) -> web_sys::HtmlVideoElement {
         self.element.clone()
     }
@@ -114,18 +113,24 @@ impl VideoElement {
         self.loaded
     }
 
-    pub fn add_event_listener(
+    pub fn set_loaded(&mut self) {
+        self.loaded = true;
+    }
+
+    pub fn add_event_listener<E: EventType>(
         &mut self,
-        event_name: &'static str,
-        tx: crossbeam_channel::Sender<ListenerCommand>,
-        command: ListenerCommand,
+        event: ListenerEvent<E>,
+        tx: crossbeam_channel::Sender<ListenerEvent<E>>,
     ) {
-        let callback = move |_event: &web_sys::Event| {
-            if let Err(err) = tx.send(command.clone()) {
-                warn!("Failed to register listener: {err:?}");
-            };
-        };
-        let listener = EventListener::new(&self.element, event_name, callback);
+        let listener = EventListener::new(
+            &self.element,
+            E::EVENT_NAME,
+            move |_event: &web_sys::Event| {
+                if let Err(err) = tx.send(event) {
+                    warn!("Failed to ad video event listener: {err:?}");
+                };
+            },
+        );
         self.listeners.push(listener);
     }
 }
