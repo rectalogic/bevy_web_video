@@ -5,17 +5,17 @@ use bevy::{
 use wasm_bindgen::prelude::*;
 
 mod asset;
-mod commands;
 mod event;
-mod listener;
+mod extensions;
 mod registry;
 mod render;
 
 pub use crate::{
-    asset::{AddVideoTextureExt, VideoSource},
-    commands::EntityCommandsWithVideoElementExt,
+    asset::VideoSource,
     event::{EventListenerApp, EventType, ListenerEvent, events},
-    listener::EntityAddVideoEventListenerExt,
+    extensions::{
+        AddVideoTextureExt, EntityAddVideoEventListenerExt, EntityCommandsWithVideoElementExt,
+    },
 };
 
 pub struct WebVideoPlugin;

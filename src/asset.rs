@@ -17,6 +17,8 @@ pub fn plugin(app: &mut App) {
         .add_observer(on_error)
         .add_observer(on_playing)
         //XXX timing issues, need this to run before user configures the video
+        // XXX add a new Event, user can observe it, trigger it after we add our listeners
+        //XXX needs to be targeted, how do we communicate target entity?
         .add_systems(PostUpdate, add_listeners.after(AssetEvents));
 }
 
@@ -144,14 +146,4 @@ fn on_playing(trigger: Trigger<ListenerEvent<events::Playing>>) {
             video_element.set_loaded();
         }
     });
-}
-
-pub trait AddVideoTextureExt {
-    fn add_video_texture(&mut self) -> Handle<Image>;
-}
-
-impl AddVideoTextureExt for Assets<Image> {
-    fn add_video_texture(&mut self) -> Handle<Image> {
-        self.get_handle_provider().reserve_handle().typed::<Image>()
-    }
 }

@@ -5,25 +5,16 @@ use crate::{
     registry::Registry,
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
-use std::sync::Arc;
-use wasm_bindgen::UnwrapThrowExt;
 
-pub trait ListenerCallback: FnMut(&mut World) + Send + Sync + 'static {}
-impl<C: FnMut(&mut World) + Send + Sync + 'static> ListenerCallback for C {}
-
-#[derive(Clone)]
-pub struct ListenerCommand(Arc<Box<dyn ListenerCallback>>);
-
-impl ListenerCommand {
-    pub fn new(callback: impl ListenerCallback) -> Self {
-        Self(Arc::new(Box::new(callback)))
-    }
+pub trait AddVideoTextureExt {
+    fn add_video_texture(&mut self) -> Handle<Image>;
 }
 
-impl Command for ListenerCommand {
-    fn apply(mut self, world: &mut World) {
-        Arc::get_mut(&mut self.0).expect_throw("Failed to get mutable reference to command")(world);
-    }
+pub trait EntityCommandsWithVideoElementExt {
+    fn with_video_element(
+        &mut self,
+        f: impl FnOnce(Option<web_sys::HtmlVideoElement>) -> Result<()> + Send + Sync + 'static,
+    ) -> &mut Self;
 }
 
 pub trait EntityAddVideoEventListenerExt {
@@ -34,6 +25,49 @@ pub trait EntityAddVideoEventListenerExt {
     where
         E: EventType,
         B: Bundle;
+}
+
+impl AddVideoTextureExt for Assets<Image> {
+    fn add_video_texture(&mut self) -> Handle<Image> {
+        self.get_handle_provider().reserve_handle().typed::<Image>()
+    }
+}
+
+impl EntityCommandsWithVideoElementExt for EntityCommands<'_> {
+    fn with_video_element(
+        &mut self,
+        f: impl FnOnce(Option<web_sys::HtmlVideoElement>) -> Result<()> + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.queue(|mut entity: EntityWorldMut| {
+            entity.with_video_element(f);
+        })
+    }
+}
+
+impl EntityCommandsWithVideoElementExt for EntityWorldMut<'_> {
+    //XXX this needs to happen after we add internal listeners - use an observer and trigger an event?
+    fn with_video_element(
+        &mut self,
+        f: impl FnOnce(Option<web_sys::HtmlVideoElement>) -> Result<()> + Send + Sync + 'static,
+    ) -> &mut Self {
+        if let Err(err) = if let Some(WebVideo(source_handle)) = self.get::<WebVideo>()
+            && let Some(sources) = self.get_resource::<Assets<VideoSource>>()
+            && let Some(source) = sources.get(source_handle)
+        {
+            Registry::with_borrow_mut(|registry| {
+                if let Some(video_element) = registry.get_mut(&source.registry_id()) {
+                    f(Some(video_element.element()))
+                } else {
+                    f(None)
+                }
+            })
+        } else {
+            f(None)
+        } {
+            warn!("with_video_element failed: {err:?}");
+        }
+        self
+    }
 }
 
 impl EntityAddVideoEventListenerExt for EntityCommands<'_> {

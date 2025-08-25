@@ -33,12 +33,6 @@ impl<E: EventType> EventSender<E> {
 #[derive(Resource)]
 pub struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
 
-impl<E: EventType> EventReceiver<E> {
-    pub fn rx(&self) -> crossbeam_channel::Receiver<ListenerEvent<E>> {
-        self.0.clone()
-    }
-}
-
 #[derive(Event, Copy, Clone)]
 pub struct ListenerEvent<E: EventType> {
     registry_id: RegistryId,

@@ -1,7 +1,4 @@
-use crate::{
-    event::{EventType, ListenerEvent},
-    listener::ListenerCommand,
-};
+use crate::event::{EventType, ListenerEvent};
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
