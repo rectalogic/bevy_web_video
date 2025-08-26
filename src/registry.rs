@@ -62,10 +62,6 @@ impl ElementRegistry {
         self.elements.get_mut(registry_id)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &RegisteredElement> {
-        self.elements.values()
-    }
-
     pub fn with_borrow<F, R>(f: F) -> R
     where
         F: FnOnce(&Self) -> R,
@@ -82,39 +78,20 @@ impl ElementRegistry {
 }
 
 pub struct RegisteredElement {
-    target_texture_id: AssetId<Image>,
     element: web_sys::HtmlVideoElement,
-    renderable: bool,
     listeners: Vec<EventListener>,
 }
 
 impl RegisteredElement {
-    pub fn new(
-        target_texture_id: impl Into<AssetId<Image>>,
-        element: web_sys::HtmlVideoElement,
-    ) -> Self {
+    pub fn new(element: web_sys::HtmlVideoElement) -> Self {
         Self {
-            target_texture_id: target_texture_id.into(),
             element,
-            renderable: false,
             listeners: Vec::default(),
         }
     }
 
     pub fn element(&self) -> &web_sys::HtmlVideoElement {
         &self.element
-    }
-
-    pub fn target_texture_id(&self) -> AssetId<Image> {
-        self.target_texture_id
-    }
-
-    pub fn is_renderable(&self) -> bool {
-        self.renderable
-    }
-
-    pub fn set_renderable(&mut self) {
-        self.renderable = true;
     }
 
     pub fn add_event_listener<E: EventType>(

@@ -1,8 +1,4 @@
-use bevy::{
-    asset::AsAssetId,
-    prelude::*,
-    render::{Render, RenderApp, RenderSet},
-};
+use bevy::{asset::AsAssetId, prelude::*};
 use wasm_bindgen::prelude::*;
 
 mod asset;
@@ -15,25 +11,18 @@ pub use crate::{
     asset::{VideoElement, VideoElementCreated},
     event::{EventListenerAppExt, EventType, EventWithVideoElementId, ListenerEvent, events},
     extensions::EntityAddVideoEventListenerExt,
+    render::WebVideoRenderPlugin,
 };
 
 pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(asset::plugin)
+        app.add_plugins((asset::plugin, WebVideoRenderPlugin))
             .add_listener_event::<events::LoadedMetadata>()
             .add_listener_event::<events::Resize>()
             .add_listener_event::<events::Playing>()
             .add_listener_event::<events::Error>();
-    }
-
-    fn finish(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app.add_systems(
-            Render,
-            render::render_videos.in_set(RenderSet::PrepareResources),
-        );
     }
 }
 
