@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EntityAddVideoEventListenerExt, ListenerEvent, VideoCreated, VideoSource, WebVideo,
+    EntityAddVideoEventListenerExt, ListenerEvent, VideoCreated, VideoElement, WebVideo,
     WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
@@ -48,12 +48,12 @@ fn setup(
         Assets<ForwardDecalMaterial<StandardMaterial>>,
     >,
     images: Res<Assets<Image>>,
-    mut sources: ResMut<Assets<VideoSource>>,
+    mut video_elements: ResMut<Assets<VideoElement>>,
 ) -> Result<()> {
     let image_handle1 = images.reserve_handle();
-    let source_handle1 = sources.add(VideoSource::new(image_handle1.clone()));
+    let video_element_handle1 = video_elements.add(VideoElement::new(image_handle1.clone()));
 
-    let mut video_commands = commands.spawn(WebVideo::new(source_handle1));
+    let mut video_commands = commands.spawn(WebVideo::new(video_element_handle1));
     video_commands.add_video_event_listener(
         |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
          mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
@@ -110,10 +110,10 @@ fn setup(
     #[cfg(feature = "webgpu")]
     {
         let image_handle2 = images.reserve_handle();
-        let source_handle2 = sources.add(VideoSource::new(image_handle2.clone()));
+        let video_element_handle2 = video_elements.add(VideoElement::new(image_handle2.clone()));
 
         commands
-            .spawn(WebVideo::new(source_handle2))
+            .spawn(WebVideo::new(video_element_handle2))
             .add_video_event_listener(scale_decals::<VideoB>)
             .observe(|trigger: Trigger<VideoCreated>| -> Result<()> {
                 let Some(video) = trigger.video_element() else {return Err("missing video".into());};

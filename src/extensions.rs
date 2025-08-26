@@ -1,10 +1,10 @@
 use crate::{
     WebVideo,
-    asset::VideoSource,
+    asset::VideoElement,
     event::{EventSender, EventType, ListenerEvent},
     registry::ElementRegistry,
 };
-use bevy::{ecs::system::IntoObserverSystem, prelude::*};
+use bevy::{asset::AsAssetId, ecs::system::IntoObserverSystem, prelude::*};
 
 pub trait EntityAddVideoEventListenerExt {
     fn add_video_event_listener<E, B, M>(
@@ -45,18 +45,18 @@ impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
             warn!("Video event type {} not registered", E::EVENT_NAME);
             return self;
         };
-        let Some(sources) = self.get_resource::<Assets<VideoSource>>() else {
+        let Some(video_elements) = self.get_resource::<Assets<VideoElement>>() else {
             return self;
         };
-        let Some(WebVideo(source_handle)) = self.get::<WebVideo>() else {
+        let Some(web_video) = self.get::<WebVideo>() else {
             warn!("No WebVideo component found on entity {}", target);
             return self;
         };
-        let Some(source) = sources.get(source_handle) else {
+        let Some(video_element) = video_elements.get(web_video.as_asset_id()) else {
             return self;
         };
         let tx = event_sender.tx();
-        let registry_id = source.registry_id();
+        let registry_id = video_element.registry_id();
 
         ElementRegistry::with_borrow_mut(|registry| {
             if let Some(element) = registry.get_mut(&registry_id) {

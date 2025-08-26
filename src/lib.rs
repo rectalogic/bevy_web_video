@@ -1,4 +1,5 @@
 use bevy::{
+    asset::AsAssetId,
     prelude::*,
     render::{Render, RenderApp, RenderSet},
 };
@@ -11,7 +12,7 @@ mod registry;
 mod render;
 
 pub use crate::{
-    asset::{VideoCreated, VideoSource},
+    asset::{VideoCreated, VideoElement},
     event::{EventListenerAppExt, EventType, ListenerEvent, events},
     extensions::EntityAddVideoEventListenerExt,
 };
@@ -37,19 +38,19 @@ impl Plugin for WebVideoPlugin {
 }
 
 #[derive(Clone, Component)]
-pub struct WebVideo(Handle<VideoSource>);
+pub struct WebVideo(Handle<VideoElement>);
 
 impl WebVideo {
-    pub fn new(source: Handle<VideoSource>) -> Self {
-        Self(source)
+    pub fn new(video_element: Handle<VideoElement>) -> Self {
+        Self(video_element)
     }
+}
 
-    pub fn source_id(&self) -> AssetId<VideoSource> {
+impl AsAssetId for WebVideo {
+    type Asset = VideoElement;
+
+    fn as_asset_id(&self) -> AssetId<Self::Asset> {
         self.0.id()
-    }
-
-    pub(crate) fn source(&self) -> &Handle<VideoSource> {
-        &self.0
     }
 }
 

@@ -4,15 +4,14 @@ use crate::{
     registry::{ElementRegistry, RegisteredElement, RegistryId},
 };
 use bevy::{
-    asset::AssetEvents,
-    asset::RenderAssetUsages,
+    asset::{AsAssetId, AssetEvents, RenderAssetUsages},
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
 };
 use wasm_bindgen::prelude::*;
 
 pub fn plugin(app: &mut App) {
-    app.init_asset::<VideoSource>()
+    app.init_asset::<VideoElement>()
         .add_event::<VideoCreated>()
         .add_observer(on_loadedmetadata)
         .add_observer(on_resize)
@@ -24,18 +23,18 @@ pub fn plugin(app: &mut App) {
 #[derive(Event)]
 pub struct VideoCreated {
     registry_id: RegistryId,
-    asset_id: AssetId<VideoSource>,
+    asset_id: AssetId<VideoElement>,
 }
 
 impl VideoCreated {
-    fn new(registry_id: RegistryId, asset_id: AssetId<VideoSource>) -> Self {
+    fn new(registry_id: RegistryId, asset_id: AssetId<VideoElement>) -> Self {
         Self {
             registry_id,
             asset_id,
         }
     }
 
-    pub fn asset_id(&self) -> AssetId<VideoSource> {
+    pub fn asset_id(&self) -> AssetId<VideoElement> {
         self.asset_id
     }
 
@@ -47,12 +46,12 @@ impl VideoCreated {
 }
 
 #[derive(Asset, Debug, TypePath)]
-pub struct VideoSource {
+pub struct VideoElement {
     target_texture: Handle<Image>,
     registry_id: RegistryId,
 }
 
-impl VideoSource {
+impl VideoElement {
     pub fn new(target_texture: Handle<Image>) -> Self {
         let html_video_element = web_sys::window()
             .expect_throw("window")
@@ -82,7 +81,7 @@ impl VideoSource {
     }
 }
 
-impl Drop for VideoSource {
+impl Drop for VideoElement {
     fn drop(&mut self) {
         ElementRegistry::with_borrow_mut(|registry| registry.remove(self.registry_id()));
     }
@@ -91,9 +90,9 @@ impl Drop for VideoSource {
 #[allow(clippy::too_many_arguments)]
 fn add_listeners(
     mut commands: Commands,
-    mut events: EventReader<AssetEvent<VideoSource>>,
+    mut events: EventReader<AssetEvent<VideoElement>>,
     web_videos: Query<(Entity, &WebVideo)>,
-    sources: Res<Assets<VideoSource>>,
+    video_elements: Res<Assets<VideoElement>>,
     loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
     resize_event_sender: Res<EventSender<events::Resize>>,
     playing_event_sender: Res<EventSender<events::Playing>>,
@@ -101,7 +100,7 @@ fn add_listeners(
 ) {
     for event in events.read() {
         if let AssetEvent::Added { id: asset_id } = *event
-            && let Some(source) = sources.get(asset_id)
+            && let Some(source) = video_elements.get(asset_id)
         {
             let registry_id = source.registry_id();
             ElementRegistry::with_borrow_mut(|registry| {
@@ -129,7 +128,7 @@ fn add_listeners(
             web_videos
                 .iter()
                 .filter_map(|(entity, web_video)| {
-                    if web_video.source().id() == asset_id {
+                    if web_video.as_asset_id() == asset_id {
                         Some(entity)
                     } else {
                         None
