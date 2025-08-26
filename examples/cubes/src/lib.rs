@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EntityAddVideoEventListenerExt, ListenerEvent, VideoCreated, VideoElement, WebVideo,
+    EntityAddVideoEventListenerExt, ListenerEvent, VideoElement, VideoElementCreated, WebVideo,
     WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
@@ -85,7 +85,7 @@ fn setup(
     #[cfg(feature = "webgpu")]
     video_commands.add_video_event_listener(scale_decals::<VideoA>);
 
-    video_commands.observe(|trigger: Trigger<VideoCreated>| -> Result<()> {
+    video_commands.observe(|trigger: Trigger<VideoElementCreated>| -> Result<()> {
             let Some(video) = trigger.video_element() else {return Err("missing video".into());};
             video.set_cross_origin(Some("anonymous"));
             video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
@@ -115,7 +115,7 @@ fn setup(
         commands
             .spawn(WebVideo::new(video_element_handle2))
             .add_video_event_listener(scale_decals::<VideoB>)
-            .observe(|trigger: Trigger<VideoCreated>| -> Result<()> {
+            .observe(|trigger: Trigger<VideoElementCreated>| -> Result<()> {
                 let Some(video) = trigger.video_element() else {return Err("missing video".into());};
                 video.set_cross_origin(Some("anonymous"));
                 video.set_src(

@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 
 pub fn plugin(app: &mut App) {
     app.init_asset::<VideoElement>()
-        .add_event::<VideoCreated>()
+        .add_event::<VideoElementCreated>()
         .add_observer(on_loadedmetadata)
         .add_observer(on_resize)
         .add_observer(on_error)
@@ -21,12 +21,12 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(Event)]
-pub struct VideoCreated {
+pub struct VideoElementCreated {
     registry_id: RegistryId,
     asset_id: AssetId<VideoElement>,
 }
 
-impl VideoCreated {
+impl VideoElementCreated {
     fn new(registry_id: RegistryId, asset_id: AssetId<VideoElement>) -> Self {
         Self {
             registry_id,
@@ -135,7 +135,8 @@ fn add_listeners(
                     }
                 })
                 .for_each(|entity| {
-                    commands.trigger_targets(VideoCreated::new(registry_id, asset_id), entity)
+                    commands
+                        .trigger_targets(VideoElementCreated::new(registry_id, asset_id), entity)
                 });
         }
     }

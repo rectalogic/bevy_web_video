@@ -12,7 +12,7 @@ mod registry;
 mod render;
 
 pub use crate::{
-    asset::{VideoCreated, VideoElement},
+    asset::{VideoElement, VideoElementCreated},
     event::{EventListenerAppExt, EventType, ListenerEvent, events},
     extensions::EntityAddVideoEventListenerExt,
 };
