@@ -1,4 +1,4 @@
-use crate::registry::{ElementRegistry, RegistryId};
+use crate::VideoElement;
 use bevy::prelude::*;
 use crossbeam_channel::unbounded;
 use std::marker::PhantomData;
@@ -35,28 +35,28 @@ pub struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent
 
 #[derive(Event, Copy, Clone)]
 pub struct ListenerEvent<E: EventType> {
-    registry_id: RegistryId,
+    video_element_id: AssetId<VideoElement>,
     target: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
 impl<E: EventType> ListenerEvent<E> {
-    pub(crate) fn new(registry_id: RegistryId, target: Option<Entity>) -> Self {
+    pub(crate) fn new(video_element_id: AssetId<VideoElement>, target: Option<Entity>) -> Self {
         Self {
-            registry_id,
+            video_element_id,
             target,
             _phantom: PhantomData,
         }
     }
+}
 
-    pub(crate) fn registry_id(&self) -> RegistryId {
-        self.registry_id
-    }
+pub trait EventWithVideoElementId {
+    fn video_element_id(&self) -> AssetId<VideoElement>;
+}
 
-    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        ElementRegistry::with_borrow(|registry| {
-            registry.get(&self.registry_id).map(|e| e.element().clone())
-        })
+impl<E: EventType> EventWithVideoElementId for ListenerEvent<E> {
+    fn video_element_id(&self) -> AssetId<VideoElement> {
+        self.video_element_id
     }
 }
 

@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EntityAddVideoEventListenerExt, ListenerEvent, VideoElement, VideoElementCreated, WebVideo,
-    WebVideoError, WebVideoPlugin, events,
+    EntityAddVideoEventListenerExt, EventWithVideoElementId, ListenerEvent, VideoElement,
+    VideoElementCreated, WebVideo, WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
 
@@ -57,11 +57,12 @@ fn setup(
     video_commands.add_video_event_listener(
         |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
          mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
-         mut materials: ResMut<Assets<StandardMaterial>>| {
-            if let Some(material) = materials.get_mut(&mesh_material.0) {
-                let Some(element) = trigger.video_element() else {
-                    return;
-                };
+         mut materials: ResMut<Assets<StandardMaterial>>,
+         video_elements: Res<Assets<VideoElement>>| {
+            if let Some(video_element) = video_elements.get(trigger.video_element_id())
+                && let Some(element) = video_element.element()
+                && let Some(material) = materials.get_mut(&mesh_material.0)
+            {
                 let width = element.video_width();
                 let height = element.video_height();
 
@@ -85,15 +86,19 @@ fn setup(
     #[cfg(feature = "webgpu")]
     video_commands.add_video_event_listener(scale_decals::<VideoA>);
 
-    video_commands.observe(|trigger: Trigger<VideoElementCreated>| -> Result<()> {
-            let Some(video) = trigger.video_element() else {return Err("missing video".into());};
+    video_commands.observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+        if let Some(video_element) = video_elements.get(trigger.video_element_id())
+            && let Some(video) = video_element.element() {
             video.set_cross_origin(Some("anonymous"));
             video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
             video.set_muted(true);
             video.set_loop(true);
             let _ = video.play().map_err(WebVideoError::from)?;
             Ok(())
-        });
+        } else {
+            Err("Missing video".into())
+        }
+    });
 
     commands.spawn((
         Animated,
@@ -115,16 +120,20 @@ fn setup(
         commands
             .spawn(WebVideo::new(video_element_handle2))
             .add_video_event_listener(scale_decals::<VideoB>)
-            .observe(|trigger: Trigger<VideoElementCreated>| -> Result<()> {
-                let Some(video) = trigger.video_element() else {return Err("missing video".into());};
-                video.set_cross_origin(Some("anonymous"));
-                video.set_src(
-                    "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
-                );
-                video.set_muted(true);
-                video.set_loop(true);
-                let _ = video.play().map_err(WebVideoError::from)?;
-                Ok(())
+            .observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+                if let Some(video_element) = video_elements.get(trigger.video_element_id())
+                    && let Some(video) = video_element.element() {
+                    video.set_cross_origin(Some("anonymous"));
+                    video.set_src(
+                        "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
+                    );
+                    video.set_muted(true);
+                    video.set_loop(true);
+                    let _ = video.play().map_err(WebVideoError::from)?;
+                    Ok(())
+                } else {
+                    Err("missing video".into())
+                }
             });
 
         let decal_material1 = decal_materials.add(new_decal_material(image_handle1));
@@ -216,18 +225,20 @@ fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMate
 fn scale_decals<V: Component>(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
     mut decals: Query<&mut Transform, (With<ForwardDecal>, With<V>)>,
+    video_elements: Res<Assets<VideoElement>>,
 ) {
-    let Some(video_element) = trigger.video_element() else {
-        return;
-    };
-    let width = video_element.video_width();
-    let height = video_element.video_height();
-    for mut transform in &mut decals {
-        // Scale decal to match video aspect ratio
-        if width > height {
-            transform.scale.z = height as f32 / width as f32;
-        } else {
-            transform.scale.x = width as f32 / height as f32;
+    if let Some(video_element) = video_elements.get(trigger.video_element_id())
+        && let Some(video) = video_element.element()
+    {
+        let width = video.video_width();
+        let height = video.video_height();
+        for mut transform in &mut decals {
+            // Scale decal to match video aspect ratio
+            if width > height {
+                transform.scale.z = height as f32 / width as f32;
+            } else {
+                transform.scale.x = width as f32 / height as f32;
+            }
         }
     }
 }

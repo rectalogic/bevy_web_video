@@ -1,6 +1,6 @@
 use crate::{
     WebVideo,
-    event::{EventSender, ListenerEvent, events},
+    event::{EventSender, EventWithVideoElementId, ListenerEvent, events},
     registry::{ElementRegistry, RegisteredElement, RegistryId},
 };
 use bevy::{
@@ -22,26 +22,20 @@ pub fn plugin(app: &mut App) {
 
 #[derive(Event)]
 pub struct VideoElementCreated {
-    registry_id: RegistryId,
-    asset_id: AssetId<VideoElement>,
+    video_element_id: AssetId<VideoElement>,
 }
 
 impl VideoElementCreated {
-    fn new(registry_id: RegistryId, asset_id: AssetId<VideoElement>) -> Self {
+    fn new(video_element_id: impl Into<AssetId<VideoElement>>) -> Self {
         Self {
-            registry_id,
-            asset_id,
+            video_element_id: video_element_id.into(),
         }
     }
+}
 
-    pub fn asset_id(&self) -> AssetId<VideoElement> {
-        self.asset_id
-    }
-
-    pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        ElementRegistry::with_borrow(|registry| {
-            registry.get(&self.registry_id).map(|e| e.element().clone())
-        })
+impl EventWithVideoElementId for VideoElementCreated {
+    fn video_element_id(&self) -> AssetId<VideoElement> {
+        self.video_element_id
     }
 }
 
@@ -76,6 +70,12 @@ impl VideoElement {
         &self.target_texture
     }
 
+    pub fn element(&self) -> Option<web_sys::HtmlVideoElement> {
+        ElementRegistry::with_borrow(|registry| {
+            registry.get(&self.registry_id).map(|e| e.element().clone())
+        })
+    }
+
     pub(crate) fn registry_id(&self) -> RegistryId {
         self.registry_id
     }
@@ -99,26 +99,28 @@ fn add_listeners(
     error_event_sender: Res<EventSender<events::Error>>,
 ) {
     for event in events.read() {
-        if let AssetEvent::Added { id: asset_id } = *event
-            && let Some(source) = video_elements.get(asset_id)
+        if let AssetEvent::Added {
+            id: video_element_id,
+        } = *event
+            && let Some(video_element) = video_elements.get(video_element_id)
         {
-            let registry_id = source.registry_id();
+            let registry_id = video_element.registry_id();
             ElementRegistry::with_borrow_mut(|registry| {
                 if let Some(element) = registry.get_mut(&registry_id) {
                     element.add_event_listener(
-                        ListenerEvent::<events::LoadedMetadata>::new(registry_id, None),
+                        ListenerEvent::<events::LoadedMetadata>::new(video_element_id, None),
                         loadedmetadata_event_sender.tx(),
                     );
                     element.add_event_listener(
-                        ListenerEvent::<events::Resize>::new(registry_id, None),
+                        ListenerEvent::<events::Resize>::new(video_element_id, None),
                         resize_event_sender.tx(),
                     );
                     element.add_event_listener(
-                        ListenerEvent::<events::Playing>::new(registry_id, None),
+                        ListenerEvent::<events::Playing>::new(video_element_id, None),
                         playing_event_sender.tx(),
                     );
                     element.add_event_listener(
-                        ListenerEvent::<events::Error>::new(registry_id, None),
+                        ListenerEvent::<events::Error>::new(video_element_id, None),
                         error_event_sender.tx(),
                     );
                 }
@@ -128,15 +130,14 @@ fn add_listeners(
             web_videos
                 .iter()
                 .filter_map(|(entity, web_video)| {
-                    if web_video.as_asset_id() == asset_id {
-                        Some(entity)
+                    if web_video.as_asset_id() == video_element_id {
+                        Some((entity, video_element_id))
                     } else {
                         None
                     }
                 })
-                .for_each(|entity| {
-                    commands
-                        .trigger_targets(VideoElementCreated::new(registry_id, asset_id), entity)
+                .for_each(|(entity, video_element_id)| {
+                    commands.trigger_targets(VideoElementCreated::new(video_element_id), entity)
                 });
         }
     }
@@ -159,31 +160,57 @@ fn resize_image(element: &RegisteredElement, images: &mut Assets<Image>) {
 
 fn on_loadedmetadata(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
 ) {
+    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+        return;
+    };
     ElementRegistry::with_borrow(|registry| {
-        if let Some(element) = registry.get(&trigger.registry_id()) {
+        if let Some(element) = registry.get(&video_element.registry_id()) {
             resize_image(element, &mut images);
         }
     });
 }
 
-fn on_resize(trigger: Trigger<ListenerEvent<events::Resize>>, mut images: ResMut<Assets<Image>>) {
+fn on_resize(
+    trigger: Trigger<ListenerEvent<events::Resize>>,
+    video_elements: Res<Assets<VideoElement>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+        return;
+    };
     ElementRegistry::with_borrow(|registry| {
-        if let Some(element) = registry.get(&trigger.registry_id()) {
+        if let Some(element) = registry.get(&video_element.registry_id()) {
             resize_image(element, &mut images);
         }
     });
 }
 
-fn on_error(trigger: Trigger<ListenerEvent<events::Error>>) {
-    let video = trigger.video_element();
-    warn!("Video {video:?} failed with error");
+fn on_error(
+    trigger: Trigger<ListenerEvent<events::Error>>,
+    video_elements: Res<Assets<VideoElement>>,
+) {
+    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+        return;
+    };
+    ElementRegistry::with_borrow(|registry| {
+        if let Some(element) = registry.get(&video_element.registry_id()) {
+            warn!("Video {:?} failed with error", element.element());
+        }
+    });
 }
 
-fn on_playing(trigger: Trigger<ListenerEvent<events::Playing>>) {
+fn on_playing(
+    trigger: Trigger<ListenerEvent<events::Playing>>,
+    video_elements: Res<Assets<VideoElement>>,
+) {
+    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+        return;
+    };
     ElementRegistry::with_borrow_mut(|registry| {
-        if let Some(element) = registry.get_mut(&trigger.registry_id()) {
+        if let Some(element) = registry.get_mut(&video_element.registry_id()) {
             element.set_renderable();
         }
     });

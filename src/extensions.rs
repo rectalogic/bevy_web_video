@@ -52,15 +52,18 @@ impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
             warn!("No WebVideo component found on entity {}", target);
             return self;
         };
-        let Some(video_element) = video_elements.get(web_video.as_asset_id()) else {
+        let video_element_id = web_video.as_asset_id();
+        let Some(video_element) = video_elements.get(video_element_id) else {
             return self;
         };
         let tx = event_sender.tx();
         let registry_id = video_element.registry_id();
-
         ElementRegistry::with_borrow_mut(|registry| {
             if let Some(element) = registry.get_mut(&registry_id) {
-                element.add_event_listener(ListenerEvent::<E>::new(registry_id, Some(target)), tx);
+                element.add_event_listener(
+                    ListenerEvent::<E>::new(video_element_id, Some(target)),
+                    tx,
+                );
                 self.observe(observer);
             }
         });
