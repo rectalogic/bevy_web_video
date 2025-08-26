@@ -1,4 +1,4 @@
-use crate::registry::{Registry, RegistryId};
+use crate::registry::{ElementRegistry, RegistryId};
 use bevy::prelude::*;
 use crossbeam_channel::unbounded;
 use std::marker::PhantomData;
@@ -54,7 +54,9 @@ impl<E: EventType> ListenerEvent<E> {
     }
 
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        Registry::with_borrow(|registry| registry.get(&self.registry_id).map(|e| e.element()))
+        ElementRegistry::with_borrow(|registry| {
+            registry.get(&self.registry_id).map(|e| e.element())
+        })
     }
 }
 

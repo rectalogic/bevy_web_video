@@ -2,7 +2,7 @@ use crate::{
     WebVideo,
     asset::VideoSource,
     event::{EventSender, EventType, ListenerEvent},
-    registry::Registry,
+    registry::ElementRegistry,
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 
@@ -58,10 +58,9 @@ impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
         let tx = event_sender.tx();
         let registry_id = source.registry_id();
 
-        Registry::with_borrow_mut(|registry| {
-            if let Some(video_element) = registry.get_mut(&registry_id) {
-                video_element
-                    .add_event_listener(ListenerEvent::<E>::new(registry_id, Some(target)), tx);
+        ElementRegistry::with_borrow_mut(|registry| {
+            if let Some(element) = registry.get_mut(&registry_id) {
+                element.add_event_listener(ListenerEvent::<E>::new(registry_id, Some(target)), tx);
                 self.observe(observer);
             }
         });

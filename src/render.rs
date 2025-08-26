@@ -1,4 +1,4 @@
-use crate::registry::Registry;
+use crate::registry::ElementRegistry;
 use bevy::{
     prelude::*,
     render::{render_asset::RenderAssets, renderer::RenderQueue, texture::GpuImage},
@@ -9,22 +9,22 @@ use wgpu_types::{
 };
 
 pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>>) {
-    Registry::with_borrow(|registry| {
+    ElementRegistry::with_borrow(|registry| {
         registry
             .iter()
-            .filter_map(|video_element| {
-                if video_element.is_loaded() {
+            .filter_map(|element| {
+                if element.is_renderable() {
                     images
-                        .get(video_element.target_texture_id())
-                        .map(|gpu_image| (gpu_image, video_element))
+                        .get(element.target_texture_id())
+                        .map(|gpu_image| (gpu_image, element))
                 } else {
                     None
                 }
             })
-            .for_each(|(gpu_image, video_element)| {
+            .for_each(|(gpu_image, element)| {
                 queue.copy_external_image_to_texture(
                     &CopyExternalImageSourceInfo {
-                        source: ExternalImageSource::HTMLVideoElement(video_element.element()),
+                        source: ExternalImageSource::HTMLVideoElement(element.element()),
                         origin: Origin2d::ZERO,
                         flip_y: false,
                     },

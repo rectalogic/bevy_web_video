@@ -1,7 +1,7 @@
 use crate::{
     WebVideo,
     event::{EventSender, ListenerEvent, events},
-    registry::{Registry, RegistryId, VideoElement},
+    registry::{ElementRegistry, RegisteredElement, RegistryId},
 };
 use bevy::{
     asset::AssetEvents,
@@ -24,23 +24,25 @@ pub fn plugin(app: &mut App) {
 #[derive(Event)]
 pub struct VideoCreated {
     registry_id: RegistryId,
-    source_id: AssetId<VideoSource>,
+    asset_id: AssetId<VideoSource>,
 }
 
 impl VideoCreated {
-    fn new(registry_id: RegistryId, source_id: AssetId<VideoSource>) -> Self {
+    fn new(registry_id: RegistryId, asset_id: AssetId<VideoSource>) -> Self {
         Self {
             registry_id,
-            source_id,
+            asset_id,
         }
     }
 
-    pub fn video_source(&self) -> AssetId<VideoSource> {
-        self.source_id
+    pub fn asset_id(&self) -> AssetId<VideoSource> {
+        self.asset_id
     }
 
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
-        Registry::with_borrow(|registry| registry.get(&self.registry_id).map(|e| e.element()))
+        ElementRegistry::with_borrow(|registry| {
+            registry.get(&self.registry_id).map(|e| e.element())
+        })
     }
 }
 
@@ -63,8 +65,8 @@ impl VideoSource {
             .inspect_err(|e| warn!("{e:?}"))
             .expect_throw("web_sys::HtmlVideoElement");
 
-        let video_element = VideoElement::new(target_texture.id(), html_video_element);
-        let registry_id = Registry::with_borrow_mut(|registry| registry.add(video_element));
+        let element = RegisteredElement::new(target_texture.id(), html_video_element);
+        let registry_id = ElementRegistry::with_borrow_mut(|registry| registry.add(element));
         Self {
             target_texture,
             registry_id,
@@ -82,7 +84,7 @@ impl VideoSource {
 
 impl Drop for VideoSource {
     fn drop(&mut self) {
-        Registry::with_borrow_mut(|registry| registry.remove(self.registry_id()));
+        ElementRegistry::with_borrow_mut(|registry| registry.remove(self.registry_id()));
     }
 }
 
@@ -102,21 +104,21 @@ fn add_listeners(
             && let Some(source) = sources.get(asset_id)
         {
             let registry_id = source.registry_id();
-            Registry::with_borrow_mut(|registry| {
-                if let Some(video_element) = registry.get_mut(&registry_id) {
-                    video_element.add_event_listener(
+            ElementRegistry::with_borrow_mut(|registry| {
+                if let Some(element) = registry.get_mut(&registry_id) {
+                    element.add_event_listener(
                         ListenerEvent::<events::LoadedMetadata>::new(registry_id, None),
                         loadedmetadata_event_sender.tx(),
                     );
-                    video_element.add_event_listener(
+                    element.add_event_listener(
                         ListenerEvent::<events::Resize>::new(registry_id, None),
                         resize_event_sender.tx(),
                     );
-                    video_element.add_event_listener(
+                    element.add_event_listener(
                         ListenerEvent::<events::Playing>::new(registry_id, None),
                         playing_event_sender.tx(),
                     );
-                    video_element.add_event_listener(
+                    element.add_event_listener(
                         ListenerEvent::<events::Error>::new(registry_id, None),
                         error_event_sender.tx(),
                     );
@@ -140,11 +142,11 @@ fn add_listeners(
     }
 }
 
-fn resize_image(video_element: &VideoElement, images: &mut Assets<Image>) {
+fn resize_image(element: &RegisteredElement, images: &mut Assets<Image>) {
     let mut image = Image::new_uninit(
         Extent3d {
-            width: video_element.element().video_width(),
-            height: video_element.element().video_height(),
+            width: element.element().video_width(),
+            height: element.element().video_height(),
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -152,24 +154,24 @@ fn resize_image(video_element: &VideoElement, images: &mut Assets<Image>) {
         RenderAssetUsages::RENDER_WORLD,
     );
     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-    images.insert(video_element.target_texture_id(), image);
+    images.insert(element.target_texture_id(), image);
 }
 
 fn on_loadedmetadata(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    Registry::with_borrow(|registry| {
-        if let Some(video_element) = registry.get(&trigger.registry_id()) {
-            resize_image(video_element, &mut images);
+    ElementRegistry::with_borrow(|registry| {
+        if let Some(element) = registry.get(&trigger.registry_id()) {
+            resize_image(element, &mut images);
         }
     });
 }
 
 fn on_resize(trigger: Trigger<ListenerEvent<events::Resize>>, mut images: ResMut<Assets<Image>>) {
-    Registry::with_borrow(|registry| {
-        if let Some(video_element) = registry.get(&trigger.registry_id()) {
-            resize_image(video_element, &mut images);
+    ElementRegistry::with_borrow(|registry| {
+        if let Some(element) = registry.get(&trigger.registry_id()) {
+            resize_image(element, &mut images);
         }
     });
 }
@@ -180,9 +182,9 @@ fn on_error(trigger: Trigger<ListenerEvent<events::Error>>) {
 }
 
 fn on_playing(trigger: Trigger<ListenerEvent<events::Playing>>) {
-    Registry::with_borrow_mut(|registry| {
-        if let Some(video_element) = registry.get_mut(&trigger.registry_id()) {
-            video_element.set_loaded();
+    ElementRegistry::with_borrow_mut(|registry| {
+        if let Some(element) = registry.get_mut(&trigger.registry_id()) {
+            element.set_renderable();
         }
     });
 }

@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 // wasm on web is single threaded, so this should be OK
 thread_local! {
-    static REGISTRY: RefCell<Registry> =  RefCell::new(Registry::new());
+    static REGISTRY: RefCell<ElementRegistry> =  RefCell::new(ElementRegistry::new());
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -21,12 +21,12 @@ impl RegistryId {
     }
 }
 
-pub struct Registry {
+pub struct ElementRegistry {
     pub(crate) next_id: RegistryId,
-    pub(crate) elements: HashMap<RegistryId, VideoElement>,
+    pub(crate) elements: HashMap<RegistryId, RegisteredElement>,
 }
 
-impl Registry {
+impl ElementRegistry {
     pub(crate) fn new() -> Self {
         Self {
             next_id: RegistryId::new(),
@@ -40,29 +40,29 @@ impl Registry {
         id
     }
 
-    pub(crate) fn add(&mut self, video_element: VideoElement) -> RegistryId {
+    pub(crate) fn add(&mut self, element: RegisteredElement) -> RegistryId {
         let id = self.allocate_id();
-        self.insert(id, video_element);
+        self.insert(id, element);
         id
     }
 
-    pub(crate) fn insert(&mut self, registry_id: RegistryId, video_element: VideoElement) {
-        self.elements.insert(registry_id, video_element);
+    pub(crate) fn insert(&mut self, registry_id: RegistryId, element: RegisteredElement) {
+        self.elements.insert(registry_id, element);
     }
 
-    pub(crate) fn remove(&mut self, registry_id: RegistryId) -> Option<VideoElement> {
+    pub(crate) fn remove(&mut self, registry_id: RegistryId) -> Option<RegisteredElement> {
         self.elements.remove(&registry_id)
     }
 
-    pub fn get(&self, registry_id: &RegistryId) -> Option<&VideoElement> {
+    pub fn get(&self, registry_id: &RegistryId) -> Option<&RegisteredElement> {
         self.elements.get(registry_id)
     }
 
-    pub fn get_mut(&mut self, registry_id: &RegistryId) -> Option<&mut VideoElement> {
+    pub fn get_mut(&mut self, registry_id: &RegistryId) -> Option<&mut RegisteredElement> {
         self.elements.get_mut(registry_id)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &VideoElement> {
+    pub fn iter(&self) -> impl Iterator<Item = &RegisteredElement> {
         self.elements.values()
     }
 
@@ -81,19 +81,19 @@ impl Registry {
     }
 }
 
-pub struct VideoElement {
+pub struct RegisteredElement {
     target_texture_id: AssetId<Image>,
     element: web_sys::HtmlVideoElement,
-    loaded: bool,
+    renderable: bool,
     listeners: Vec<EventListener>,
 }
 
-impl VideoElement {
+impl RegisteredElement {
     pub fn new(target_texture_id: AssetId<Image>, element: web_sys::HtmlVideoElement) -> Self {
         Self {
             target_texture_id,
             element,
-            loaded: false,
+            renderable: false,
             listeners: Vec::default(),
         }
     }
@@ -106,12 +106,12 @@ impl VideoElement {
         self.target_texture_id
     }
 
-    pub fn is_loaded(&self) -> bool {
-        self.loaded
+    pub fn is_renderable(&self) -> bool {
+        self.renderable
     }
 
-    pub fn set_loaded(&mut self) {
-        self.loaded = true;
+    pub fn set_renderable(&mut self) {
+        self.renderable = true;
     }
 
     pub fn add_event_listener<E: EventType>(
