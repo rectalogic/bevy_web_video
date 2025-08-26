@@ -89,17 +89,20 @@ pub struct RegisteredElement {
 }
 
 impl RegisteredElement {
-    pub fn new(target_texture_id: AssetId<Image>, element: web_sys::HtmlVideoElement) -> Self {
+    pub fn new(
+        target_texture_id: impl Into<AssetId<Image>>,
+        element: web_sys::HtmlVideoElement,
+    ) -> Self {
         Self {
-            target_texture_id,
+            target_texture_id: target_texture_id.into(),
             element,
             renderable: false,
             listeners: Vec::default(),
         }
     }
 
-    pub fn element(&self) -> web_sys::HtmlVideoElement {
-        self.element.clone()
+    pub fn element(&self) -> &web_sys::HtmlVideoElement {
+        &self.element
     }
 
     pub fn target_texture_id(&self) -> AssetId<Image> {

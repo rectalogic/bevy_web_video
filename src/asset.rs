@@ -40,7 +40,7 @@ impl VideoElementCreated {
 
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
         ElementRegistry::with_borrow(|registry| {
-            registry.get(&self.registry_id).map(|e| e.element())
+            registry.get(&self.registry_id).map(|e| e.element().clone())
         })
     }
 }
@@ -64,7 +64,7 @@ impl VideoElement {
             .inspect_err(|e| warn!("{e:?}"))
             .expect_throw("web_sys::HtmlVideoElement");
 
-        let element = RegisteredElement::new(target_texture.id(), html_video_element);
+        let element = RegisteredElement::new(&target_texture, html_video_element);
         let registry_id = ElementRegistry::with_borrow_mut(|registry| registry.add(element));
         Self {
             target_texture,

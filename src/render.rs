@@ -24,7 +24,7 @@ pub fn render_videos(queue: Res<RenderQueue>, images: Res<RenderAssets<GpuImage>
             .for_each(|(gpu_image, element)| {
                 queue.copy_external_image_to_texture(
                     &CopyExternalImageSourceInfo {
-                        source: ExternalImageSource::HTMLVideoElement(element.element()),
+                        source: ExternalImageSource::HTMLVideoElement(element.element().clone()),
                         origin: Origin2d::ZERO,
                         flip_y: false,
                     },

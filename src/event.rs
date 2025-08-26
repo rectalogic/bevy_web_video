@@ -55,7 +55,7 @@ impl<E: EventType> ListenerEvent<E> {
 
     pub fn video_element(&self) -> Option<web_sys::HtmlVideoElement> {
         ElementRegistry::with_borrow(|registry| {
-            registry.get(&self.registry_id).map(|e| e.element())
+            registry.get(&self.registry_id).map(|e| e.element().clone())
         })
     }
 }
