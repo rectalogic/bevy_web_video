@@ -22,35 +22,35 @@ impl RegistryId {
 }
 
 pub struct ElementRegistry {
-    pub(crate) next_id: RegistryId,
-    pub(crate) elements: HashMap<RegistryId, RegisteredElement>,
+    pub next_id: RegistryId,
+    pub elements: HashMap<RegistryId, RegisteredElement>,
 }
 
 impl ElementRegistry {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             next_id: RegistryId::new(),
             elements: HashMap::default(),
         }
     }
 
-    pub(crate) fn allocate_id(&mut self) -> RegistryId {
+    pub fn allocate_id(&mut self) -> RegistryId {
         let id = self.next_id;
         self.next_id.increment();
         id
     }
 
-    pub(crate) fn add(&mut self, element: RegisteredElement) -> RegistryId {
+    pub fn add(&mut self, element: RegisteredElement) -> RegistryId {
         let id = self.allocate_id();
         self.insert(id, element);
         id
     }
 
-    pub(crate) fn insert(&mut self, registry_id: RegistryId, element: RegisteredElement) {
+    pub fn insert(&mut self, registry_id: RegistryId, element: RegisteredElement) {
         self.elements.insert(registry_id, element);
     }
 
-    pub(crate) fn remove(&mut self, registry_id: RegistryId) -> Option<RegisteredElement> {
+    pub fn remove(&mut self, registry_id: RegistryId) -> Option<RegisteredElement> {
         self.elements.remove(&registry_id)
     }
 
