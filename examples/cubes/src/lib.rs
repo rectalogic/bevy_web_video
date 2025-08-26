@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    AddVideoTextureExt, EntityAddVideoEventListenerExt, ListenerEvent, VideoCreated, VideoSource,
-    WebVideo, WebVideoError, WebVideoPlugin, events,
+    EntityAddVideoEventListenerExt, ListenerEvent, VideoCreated, VideoSource, WebVideo,
+    WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
 
@@ -36,6 +36,7 @@ struct Animated;
 #[derive(Component)]
 struct VideoA;
 
+#[cfg(feature = "webgpu")]
 #[derive(Component)]
 struct VideoB;
 
@@ -46,10 +47,10 @@ fn setup(
     #[cfg(feature = "webgpu")] mut decal_materials: ResMut<
         Assets<ForwardDecalMaterial<StandardMaterial>>,
     >,
-    mut images: ResMut<Assets<Image>>,
+    images: Res<Assets<Image>>,
     mut sources: ResMut<Assets<VideoSource>>,
 ) -> Result<()> {
-    let image_handle1 = images.add_video_texture();
+    let image_handle1 = images.reserve_handle();
     let source_handle1 = sources.add(VideoSource::new(image_handle1.clone()));
 
     let mut video_commands = commands.spawn(WebVideo::new(source_handle1));
@@ -108,7 +109,7 @@ fn setup(
     // Decals broken on webgl2 https://github.com/bevyengine/bevy/issues/19177
     #[cfg(feature = "webgpu")]
     {
-        let image_handle2 = images.add_video_texture();
+        let image_handle2 = images.reserve_handle();
         let source_handle2 = sources.add(VideoSource::new(image_handle2.clone()));
 
         commands

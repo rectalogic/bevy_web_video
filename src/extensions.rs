@@ -6,10 +6,6 @@ use crate::{
 };
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 
-pub trait AddVideoTextureExt {
-    fn add_video_texture(&mut self) -> Handle<Image>;
-}
-
 pub trait EntityAddVideoEventListenerExt {
     fn add_video_event_listener<E, B, M>(
         &mut self,
@@ -18,12 +14,6 @@ pub trait EntityAddVideoEventListenerExt {
     where
         E: EventType,
         B: Bundle;
-}
-
-impl AddVideoTextureExt for Assets<Image> {
-    fn add_video_texture(&mut self) -> Handle<Image> {
-        self.get_handle_provider().reserve_handle().typed::<Image>()
-    }
 }
 
 impl EntityAddVideoEventListenerExt for EntityCommands<'_> {

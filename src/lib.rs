@@ -13,7 +13,7 @@ mod render;
 pub use crate::{
     asset::{VideoCreated, VideoSource},
     event::{EventListenerAppExt, EventType, ListenerEvent, events},
-    extensions::{AddVideoTextureExt, EntityAddVideoEventListenerExt},
+    extensions::EntityAddVideoEventListenerExt,
 };
 
 pub struct WebVideoPlugin;
