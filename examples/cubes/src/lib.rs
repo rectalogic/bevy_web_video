@@ -54,39 +54,43 @@ fn setup(
     let video_element_handle1 = video_elements.add(VideoElement::new(&image_handle1));
 
     let mut video_commands = commands.spawn(WebVideo::new(video_element_handle1));
-    video_commands.add_video_event_listener(
-        |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
-         mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
-         mut materials: ResMut<Assets<StandardMaterial>>,
-         video_elements: Res<Assets<VideoElement>>| {
-            if let Some(video_element) = video_elements.get(trigger.asset_id())
-                && let Some(element) = video_element.element()
-                && let Some(material) = materials.get_mut(&mesh_material.0)
-            {
-                let width = element.video_width();
-                let height = element.video_height();
-
-                // Scale uv transform to match video aspect ratio.
-                // Zoom in so video fills the face.
-                if width > height {
-                    let aspect = height as f32 / width as f32;
-                    material.uv_transform =
-                        Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
-                            * Affine2::from_scale(Vec2::new(aspect, 1.0));
-                } else {
-                    let aspect = width as f32 / height as f32;
-                    material.uv_transform =
-                        Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
-                            * Affine2::from_scale(Vec2::new(1.0, aspect));
-                }
-            }
-        },
-    );
 
     #[cfg(feature = "webgpu")]
     video_commands.add_video_event_listener(scale_decals::<VideoA>);
 
-    video_commands.observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+    video_commands.observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+        let mut video_commands = commands.entity(trigger.target());
+        video_commands.add_video_event_listener(
+            |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+             mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
+             mut materials: ResMut<Assets<StandardMaterial>>,
+             video_elements: Res<Assets<VideoElement>>| {
+                if let Some(video_element) = video_elements.get(trigger.asset_id())
+                    && let Some(element) = video_element.element()
+                    && let Some(material) = materials.get_mut(&mesh_material.0)
+                {
+                    let width = element.video_width();
+                    let height = element.video_height();
+
+                    // Scale uv transform to match video aspect ratio.
+                    // Zoom in so video fills the face.
+                    if width > height {
+                        let aspect = height as f32 / width as f32;
+                        material.uv_transform =
+                            Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
+                                * Affine2::from_scale(Vec2::new(aspect, 1.0));
+                    } else {
+                        let aspect = width as f32 / height as f32;
+                        material.uv_transform =
+                            Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
+                                * Affine2::from_scale(Vec2::new(1.0, aspect));
+                    }
+                }
+            },
+        );
+        #[cfg(feature = "webgpu")]
+        video_commands.add_video_event_listener(scale_decals::<VideoA>);
+
         if let Some(video_element) = video_elements.get(trigger.asset_id())
             && let Some(video) = video_element.element() {
             video.set_cross_origin(Some("anonymous"));
@@ -119,8 +123,8 @@ fn setup(
 
         commands
             .spawn(WebVideo::new(video_element_handle2))
-            .add_video_event_listener(scale_decals::<VideoB>)
-            .observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+            .observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+                commands.entity(trigger.target()).add_video_event_listener(scale_decals::<VideoB>);
                 if let Some(video_element) = video_elements.get(trigger.asset_id())
                     && let Some(video) = video_element.element() {
                     video.set_cross_origin(Some("anonymous"));
