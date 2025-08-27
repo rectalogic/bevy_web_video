@@ -59,7 +59,7 @@ fn setup(
          mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
          mut materials: ResMut<Assets<StandardMaterial>>,
          video_elements: Res<Assets<VideoElement>>| {
-            if let Some(video_element) = video_elements.get(trigger.video_element_id())
+            if let Some(video_element) = video_elements.get(trigger.asset_id())
                 && let Some(element) = video_element.element()
                 && let Some(material) = materials.get_mut(&mesh_material.0)
             {
@@ -87,7 +87,7 @@ fn setup(
     video_commands.add_video_event_listener(scale_decals::<VideoA>);
 
     video_commands.observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
-        if let Some(video_element) = video_elements.get(trigger.video_element_id())
+        if let Some(video_element) = video_elements.get(trigger.asset_id())
             && let Some(video) = video_element.element() {
             video.set_cross_origin(Some("anonymous"));
             video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
@@ -121,7 +121,7 @@ fn setup(
             .spawn(WebVideo::new(video_element_handle2))
             .add_video_event_listener(scale_decals::<VideoB>)
             .observe(|trigger: Trigger<VideoElementCreated>, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
-                if let Some(video_element) = video_elements.get(trigger.video_element_id())
+                if let Some(video_element) = video_elements.get(trigger.asset_id())
                     && let Some(video) = video_element.element() {
                     video.set_cross_origin(Some("anonymous"));
                     video.set_src(
@@ -227,7 +227,7 @@ fn scale_decals<V: Component>(
     mut decals: Query<&mut Transform, (With<ForwardDecal>, With<V>)>,
     video_elements: Res<Assets<VideoElement>>,
 ) {
-    if let Some(video_element) = video_elements.get(trigger.video_element_id())
+    if let Some(video_element) = video_elements.get(trigger.asset_id())
         && let Some(video) = video_element.element()
     {
         let width = video.video_width();

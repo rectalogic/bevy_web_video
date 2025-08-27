@@ -35,15 +35,15 @@ pub struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent
 
 #[derive(Event, Copy, Clone)]
 pub struct ListenerEvent<E: EventType> {
-    video_element_id: AssetId<VideoElement>,
+    asset_id: AssetId<VideoElement>,
     target: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
 impl<E: EventType> ListenerEvent<E> {
-    pub(crate) fn new(video_element_id: AssetId<VideoElement>, target: Option<Entity>) -> Self {
+    pub(crate) fn new(asset_id: AssetId<VideoElement>, target: Option<Entity>) -> Self {
         Self {
-            video_element_id,
+            asset_id,
             target,
             _phantom: PhantomData,
         }
@@ -51,12 +51,12 @@ impl<E: EventType> ListenerEvent<E> {
 }
 
 pub trait EventWithVideoElementId {
-    fn video_element_id(&self) -> AssetId<VideoElement>;
+    fn asset_id(&self) -> AssetId<VideoElement>;
 }
 
 impl<E: EventType> EventWithVideoElementId for ListenerEvent<E> {
-    fn video_element_id(&self) -> AssetId<VideoElement> {
-        self.video_element_id
+    fn asset_id(&self) -> AssetId<VideoElement> {
+        self.asset_id
     }
 }
 

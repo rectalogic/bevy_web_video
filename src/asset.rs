@@ -1,7 +1,7 @@
 use crate::{
     WebVideo,
     event::{EventSender, EventWithVideoElementId, ListenerEvent, events},
-    registry::{ElementRegistry, RegisteredElement, RegistryId},
+    registry::ElementRegistry,
 };
 use bevy::{
     asset::{AsAssetId, AssetEvents, RenderAssetUsages},
@@ -23,20 +23,20 @@ pub fn plugin(app: &mut App) {
 
 #[derive(Event)]
 pub struct VideoElementCreated {
-    video_element_id: AssetId<VideoElement>,
+    asset_id: AssetId<VideoElement>,
 }
 
 impl VideoElementCreated {
-    fn new(video_element_id: impl Into<AssetId<VideoElement>>) -> Self {
+    fn new(asset_id: impl Into<AssetId<VideoElement>>) -> Self {
         Self {
-            video_element_id: video_element_id.into(),
+            asset_id: asset_id.into(),
         }
     }
 }
 
 impl EventWithVideoElementId for VideoElementCreated {
-    fn video_element_id(&self) -> AssetId<VideoElement> {
-        self.video_element_id
+    fn asset_id(&self) -> AssetId<VideoElement> {
+        self.asset_id
     }
 }
 
@@ -44,28 +44,15 @@ impl EventWithVideoElementId for VideoElementCreated {
 pub struct VideoElement {
     target_image_id: AssetId<Image>,
     renderable: bool,
-    registry_id: RegistryId,
+    asset_id: Option<AssetId<VideoElement>>,
 }
 
 impl VideoElement {
     pub fn new(target_image: impl Into<AssetId<Image>>) -> Self {
-        let html_video_element = web_sys::window()
-            .expect_throw("window")
-            .document()
-            .expect_throw("document")
-            .create_element("video")
-            .inspect_err(|e| warn!("{e:?}"))
-            .unwrap_throw()
-            .dyn_into::<web_sys::HtmlVideoElement>()
-            .inspect_err(|e| warn!("{e:?}"))
-            .expect_throw("web_sys::HtmlVideoElement");
-
-        let element = RegisteredElement::new(html_video_element);
-        let registry_id = ElementRegistry::with_borrow_mut(|registry| registry.add(element));
         Self {
             target_image_id: target_image.into(),
             renderable: false,
-            registry_id,
+            asset_id: None,
         }
     }
 
@@ -74,17 +61,12 @@ impl VideoElement {
     }
 
     pub fn element(&self) -> Option<web_sys::HtmlVideoElement> {
-        ElementRegistry::with_borrow(|registry| {
-            registry.get(&self.registry_id).map(|e| e.element().clone())
-        })
+        let asset_id = self.asset_id?;
+        ElementRegistry::with_borrow(|registry| registry.get(asset_id).map(|e| e.element().clone()))
     }
 
     pub(crate) fn is_renderable(&self) -> bool {
         self.renderable
-    }
-
-    pub(crate) fn registry_id(&self) -> RegistryId {
-        self.registry_id
     }
 }
 
@@ -98,7 +80,7 @@ fn asset_events(
     mut commands: Commands,
     mut events: EventReader<AssetEvent<VideoElement>>,
     web_videos: Query<(Entity, &WebVideo)>,
-    video_elements: Res<Assets<VideoElement>>,
+    mut video_elements: ResMut<Assets<VideoElement>>,
     loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
     resize_event_sender: Res<EventSender<events::Resize>>,
     playing_event_sender: Res<EventSender<events::Playing>>,
@@ -106,66 +88,59 @@ fn asset_events(
 ) {
     for event in events.read() {
         match *event {
-            AssetEvent::Removed {
-                id: video_element_id,
+            AssetEvent::Removed { id: asset_id } | AssetEvent::Unused { id: asset_id } => {
+                ElementRegistry::with_borrow_mut(|registry| registry.remove(asset_id));
             }
-            | AssetEvent::Unused {
-                id: video_element_id,
-            } => {
-                //XXX check if possible to access asset after removed/unused (don't think so)
-                // XXX could store AssetId in VideoElement in AssetEvent::Added so we can remove it here
-                // XXX or should we defer creating/registering the element until Added? seems safe since nothing can access it before
-                // XXX then we can dump RegistryId and just use AssetId in the registry - VideoElement would still need to know it's own AssetId
-                if let Some(video_element) = video_elements.get(video_element_id) {
-                    ElementRegistry::with_borrow_mut(|registry| {
-                        registry.remove(video_element.registry_id())
-                    });
-                }
-            }
-            AssetEvent::Added {
-                id: video_element_id,
-            } => {
-                if let Some(video_element) = video_elements.get(video_element_id) {
-                    let registry_id = video_element.registry_id();
-                    ElementRegistry::with_borrow_mut(|registry| {
-                        if let Some(element) = registry.get_mut(&registry_id) {
-                            element.add_event_listener(
-                                ListenerEvent::<events::LoadedMetadata>::new(
-                                    video_element_id,
-                                    None,
-                                ),
-                                loadedmetadata_event_sender.tx(),
-                            );
-                            element.add_event_listener(
-                                ListenerEvent::<events::Resize>::new(video_element_id, None),
-                                resize_event_sender.tx(),
-                            );
-                            element.add_event_listener(
-                                ListenerEvent::<events::Playing>::new(video_element_id, None),
-                                playing_event_sender.tx(),
-                            );
-                            element.add_event_listener(
-                                ListenerEvent::<events::Error>::new(video_element_id, None),
-                                error_event_sender.tx(),
-                            );
-                        }
-                    });
+            AssetEvent::Added { id: asset_id } => {
+                ElementRegistry::with_borrow_mut(|registry| {
+                    let html_video_element = web_sys::window()
+                        .expect_throw("window")
+                        .document()
+                        .expect_throw("document")
+                        .create_element("video")
+                        .inspect_err(|e| warn!("{e:?}"))
+                        .unwrap_throw()
+                        .dyn_into::<web_sys::HtmlVideoElement>()
+                        .inspect_err(|e| warn!("{e:?}"))
+                        .expect_throw("web_sys::HtmlVideoElement");
+
+                    registry.insert(asset_id, html_video_element);
+                    let registered_element = registry.get_mut(asset_id).expect("registry item");
+
+                    let video_element = video_elements.get_mut(asset_id).expect("VideoElement");
+                    video_element.asset_id = Some(asset_id);
+
+                    registered_element.add_event_listener(
+                        ListenerEvent::<events::LoadedMetadata>::new(asset_id, None),
+                        loadedmetadata_event_sender.tx(),
+                    );
+                    registered_element.add_event_listener(
+                        ListenerEvent::<events::Resize>::new(asset_id, None),
+                        resize_event_sender.tx(),
+                    );
+                    registered_element.add_event_listener(
+                        ListenerEvent::<events::Playing>::new(asset_id, None),
+                        playing_event_sender.tx(),
+                    );
+                    registered_element.add_event_listener(
+                        ListenerEvent::<events::Error>::new(asset_id, None),
+                        error_event_sender.tx(),
+                    );
 
                     // Now that we have registered our listeners, allow user to access the element
                     web_videos
                         .iter()
                         .filter_map(|(entity, web_video)| {
-                            if web_video.as_asset_id() == video_element_id {
-                                Some((entity, video_element_id))
+                            if web_video.as_asset_id() == asset_id {
+                                Some((entity, asset_id))
                             } else {
                                 None
                             }
                         })
-                        .for_each(|(entity, video_element_id)| {
-                            commands
-                                .trigger_targets(VideoElementCreated::new(video_element_id), entity)
+                        .for_each(|(entity, asset_id)| {
+                            commands.trigger_targets(VideoElementCreated::new(asset_id), entity)
                         });
-                }
+                });
             }
             _ => {}
         }
@@ -195,7 +170,7 @@ fn on_loadedmetadata(
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
         return;
     };
     resize_image(video_element, &mut images);
@@ -206,7 +181,7 @@ fn on_resize(
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
         return;
     };
     resize_image(video_element, &mut images);
@@ -216,7 +191,7 @@ fn on_error(
     trigger: Trigger<ListenerEvent<events::Error>>,
     video_elements: Res<Assets<VideoElement>>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.video_element_id()) else {
+    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
         return;
     };
     if let Some(element) = video_element.element() {
@@ -228,7 +203,7 @@ fn on_playing(
     trigger: Trigger<ListenerEvent<events::Playing>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    let Some(video_element) = video_elements.get_mut(trigger.video_element_id()) else {
+    let Some(video_element) = video_elements.get_mut(trigger.asset_id()) else {
         return;
     };
     video_element.renderable = true;

@@ -1,65 +1,43 @@
-use crate::event::{EventType, ListenerEvent};
+use crate::{
+    VideoElement,
+    event::{EventType, ListenerEvent},
+};
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
 
 // wasm on web is single threaded, so this should be OK
 thread_local! {
-    static REGISTRY: RefCell<ElementRegistry> =  RefCell::new(ElementRegistry::new());
+    static REGISTRY: RefCell<ElementRegistry> =  RefCell::new(ElementRegistry::default());
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RegistryId(u64);
-
-impl RegistryId {
-    pub(crate) fn new() -> Self {
-        Self(0)
-    }
-
-    pub(crate) fn increment(&mut self) {
-        self.0 += 1;
-    }
-}
-
+#[derive(Default)]
 pub struct ElementRegistry {
-    pub next_id: RegistryId,
-    pub elements: HashMap<RegistryId, RegisteredElement>,
+    pub elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
 }
 
 impl ElementRegistry {
-    pub fn new() -> Self {
-        Self {
-            next_id: RegistryId::new(),
-            elements: HashMap::default(),
-        }
+    pub fn insert(&mut self, asset_id: AssetId<VideoElement>, video: web_sys::HtmlVideoElement) {
+        self.elements
+            .insert(asset_id, RegisteredElement::new(video));
     }
 
-    pub fn allocate_id(&mut self) -> RegistryId {
-        let id = self.next_id;
-        self.next_id.increment();
-        id
+    pub fn remove(
+        &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+    ) -> Option<RegisteredElement> {
+        self.elements.remove(&asset_id.into())
     }
 
-    pub fn add(&mut self, element: RegisteredElement) -> RegistryId {
-        let id = self.allocate_id();
-        self.insert(id, element);
-        id
+    pub fn get(&self, asset_id: impl Into<AssetId<VideoElement>>) -> Option<&RegisteredElement> {
+        self.elements.get(&asset_id.into())
     }
 
-    pub fn insert(&mut self, registry_id: RegistryId, element: RegisteredElement) {
-        self.elements.insert(registry_id, element);
-    }
-
-    pub fn remove(&mut self, registry_id: RegistryId) -> Option<RegisteredElement> {
-        self.elements.remove(&registry_id)
-    }
-
-    pub fn get(&self, registry_id: &RegistryId) -> Option<&RegisteredElement> {
-        self.elements.get(registry_id)
-    }
-
-    pub fn get_mut(&mut self, registry_id: &RegistryId) -> Option<&mut RegisteredElement> {
-        self.elements.get_mut(registry_id)
+    pub fn get_mut(
+        &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+    ) -> Option<&mut RegisteredElement> {
+        self.elements.get_mut(&asset_id.into())
     }
 
     pub fn with_borrow<F, R>(f: F) -> R
@@ -83,7 +61,7 @@ pub struct RegisteredElement {
 }
 
 impl RegisteredElement {
-    pub fn new(element: web_sys::HtmlVideoElement) -> Self {
+    fn new(element: web_sys::HtmlVideoElement) -> Self {
         Self {
             element,
             listeners: Vec::default(),
