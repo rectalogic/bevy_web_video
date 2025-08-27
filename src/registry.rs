@@ -6,6 +6,8 @@ use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap};
 
+pub mod asset;
+
 // wasm on web is single threaded, so this should be OK
 thread_local! {
     static REGISTRY: RefCell<ElementRegistry> =  RefCell::new(ElementRegistry::default());
@@ -17,15 +19,12 @@ pub struct ElementRegistry {
 }
 
 impl ElementRegistry {
-    pub fn insert(&mut self, asset_id: AssetId<VideoElement>, video: web_sys::HtmlVideoElement) {
+    fn insert(&mut self, asset_id: AssetId<VideoElement>, video: web_sys::HtmlVideoElement) {
         self.elements
             .insert(asset_id, RegisteredElement::new(video));
     }
 
-    pub fn remove(
-        &mut self,
-        asset_id: impl Into<AssetId<VideoElement>>,
-    ) -> Option<RegisteredElement> {
+    fn remove(&mut self, asset_id: impl Into<AssetId<VideoElement>>) -> Option<RegisteredElement> {
         self.elements.remove(&asset_id.into())
     }
 
@@ -55,6 +54,7 @@ impl ElementRegistry {
     }
 }
 
+#[derive(Debug)]
 pub struct RegisteredElement {
     element: web_sys::HtmlVideoElement,
     listeners: Vec<EventListener>,
