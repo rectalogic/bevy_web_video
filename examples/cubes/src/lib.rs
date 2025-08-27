@@ -51,7 +51,7 @@ fn setup(
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) -> Result<()> {
     let image_handle1 = images.reserve_handle();
-    let video_element_handle1 = video_elements.add(VideoElement::new(image_handle1.clone()));
+    let video_element_handle1 = video_elements.add(VideoElement::new(&image_handle1));
 
     let mut video_commands = commands.spawn(WebVideo::new(video_element_handle1));
     video_commands.add_video_event_listener(
@@ -115,7 +115,7 @@ fn setup(
     #[cfg(feature = "webgpu")]
     {
         let image_handle2 = images.reserve_handle();
-        let video_element_handle2 = video_elements.add(VideoElement::new(image_handle2.clone()));
+        let video_element_handle2 = video_elements.add(VideoElement::new(&image_handle2));
 
         commands
             .spawn(WebVideo::new(video_element_handle2))

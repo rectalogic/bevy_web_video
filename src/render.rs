@@ -1,11 +1,10 @@
-use crate::{
-    VideoElement,
-    registry::{ElementRegistry, RegistryId},
-};
+use crate::VideoElement;
 use bevy::{
+    ecs::system::{SystemParamItem, lifetimeless::SRes},
     prelude::*,
     render::{
-        Extract, Render, RenderApp, RenderSet, render_asset::RenderAssets, renderer::RenderQueue,
+        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssets},
+        renderer::RenderQueue,
         texture::GpuImage,
     },
 };
@@ -17,74 +16,46 @@ use wgpu_types::{
 pub struct WebVideoRenderPlugin;
 
 impl Plugin for WebVideoRenderPlugin {
-    fn build(&self, _app: &mut App) {}
-
-    fn finish(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .init_resource::<RenderableVideos>()
-            .add_systems(ExtractSchedule, extract_videos)
-            .add_systems(Render, render_videos.in_set(RenderSet::PrepareResources));
+    fn build(&self, app: &mut App) {
+        // Render videos after GpuImage is prepared
+        app.add_plugins(RenderAssetPlugin::<RenderVideoElement, GpuImage>::default());
     }
 }
 
-// This should be NonSend and contain the actual web_sys elements,
-// but can't use NonSend resource in a SubApp
-#[derive(Resource, Default)]
-struct RenderableVideos(Vec<RenderableVideo>);
+struct RenderVideoElement;
 
-struct RenderableVideo {
-    image_id: AssetId<Image>,
-    registry_id: RegistryId,
-}
+impl RenderAsset for RenderVideoElement {
+    type SourceAsset = VideoElement;
+    type Param = (SRes<RenderQueue>, SRes<RenderAssets<GpuImage>>);
 
-fn extract_videos(
-    mut renderable_videos: ResMut<RenderableVideos>,
-    video_elements: Extract<Res<Assets<VideoElement>>>,
-) {
-    let videos: Vec<RenderableVideo> = video_elements
-        .iter()
-        .filter_map(|(_, video_element)| {
-            if video_element.is_renderable() {
-                Some(RenderableVideo {
-                    image_id: video_element.target_texture().id(),
-                    registry_id: video_element.registry_id(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    renderable_videos.0 = videos;
-}
-
-fn render_videos(
-    queue: Res<RenderQueue>,
-    images: Res<RenderAssets<GpuImage>>,
-    renderable_videos: Res<RenderableVideos>,
-) {
-    ElementRegistry::with_borrow(|registry| {
-        for video in &renderable_videos.0 {
-            if let Some(gpu_image) = images.get(video.image_id)
-                && let Some(element) = registry.get(&video.registry_id)
-            {
-                queue.copy_external_image_to_texture(
-                    &CopyExternalImageSourceInfo {
-                        source: ExternalImageSource::HTMLVideoElement(element.element().clone()),
-                        origin: Origin2d::ZERO,
-                        flip_y: false,
-                    },
-                    CopyExternalImageDestInfo {
-                        texture: &gpu_image.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: TextureAspect::All,
-                        color_space: PredefinedColorSpace::Srgb,
-                        premultiplied_alpha: true,
-                    },
-                    gpu_image.size,
-                );
-            }
+    fn prepare_asset(
+        video_element: Self::SourceAsset,
+        _: AssetId<Self::SourceAsset>,
+        (render_queue, gpu_images): &mut SystemParamItem<Self::Param>,
+    ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
+        if video_element.is_renderable()
+            && let Some(gpu_image) = gpu_images.get(video_element.target_image_id())
+            && let Some(element) = video_element.element()
+        {
+            render_queue.copy_external_image_to_texture(
+                &CopyExternalImageSourceInfo {
+                    source: ExternalImageSource::HTMLVideoElement(element),
+                    origin: Origin2d::ZERO,
+                    flip_y: false,
+                },
+                CopyExternalImageDestInfo {
+                    texture: &gpu_image.texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                    color_space: PredefinedColorSpace::Srgb,
+                    premultiplied_alpha: true,
+                },
+                gpu_image.size,
+            );
+            Ok(RenderVideoElement)
+        } else {
+            Err(PrepareAssetError::RetryNextUpdate(video_element))
         }
-    });
+    }
 }
