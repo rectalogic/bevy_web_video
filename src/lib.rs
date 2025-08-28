@@ -2,13 +2,14 @@ use bevy::{asset::AsAssetId, prelude::*};
 use wasm_bindgen::prelude::*;
 
 mod event;
-mod extensions;
 mod registry;
 pub(crate) mod render;
 
 pub use crate::{
-    event::{EventListenerAppExt, EventType, EventWithVideoElementId, ListenerEvent, events},
-    extensions::EntityAddVideoEventListenerExt,
+    event::{
+        EventListenerAppExt, EventSender, EventType, EventWithVideoElementId, ListenerEvent,
+        ObservableEntity, events,
+    },
     registry::{
         VideoElementRegistry,
         asset::{VideoElement, VideoElementCreated},

@@ -1,6 +1,7 @@
-use crate::VideoElement;
-use bevy::prelude::*;
+use crate::{VideoElement, VideoElementRegistry};
+use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 use crossbeam_channel::unbounded;
+use gloo_events::EventListener;
 use std::marker::PhantomData;
 
 pub fn plugin(app: &mut App) {
@@ -32,13 +33,52 @@ impl EventListenerAppExt for App {
 pub struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEvent<E>>);
 
 impl<E: EventType> EventSender<E> {
-    pub fn tx(&self) -> crossbeam_channel::Sender<ListenerEvent<E>> {
-        self.0.clone()
+    pub fn add_video_event_listener<'o, B, M, O>(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+        observable: &'o mut O,
+        observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
+    ) -> &'o mut O
+    where
+        B: Bundle,
+        O: ObservableEntity<E, B, M>,
+    {
+        self.add_listener(asset_id, element, registry, Some(observable.id()));
+        observable.observe(observer)
+    }
+
+    pub(crate) fn add_video_event_listener_internal(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+    ) {
+        self.add_listener(asset_id, element, registry, None);
+    }
+
+    fn add_listener(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+        target: Option<Entity>,
+    ) {
+        let tx = self.0.clone();
+        let asset_id = asset_id.into();
+        let listener =
+            EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
+                if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, target)) {
+                    warn!("Failed to fire video event {}: {err:?}", E::EVENT_NAME);
+                };
+            });
+        registry.add_event_listener(asset_id, listener);
     }
 }
 
 #[derive(Resource)]
-pub struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
+struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
 
 #[derive(Event, Copy, Clone)]
 pub struct ListenerEvent<E: EventType> {
@@ -99,5 +139,42 @@ fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands
         } else {
             commands.trigger(event);
         }
+    }
+}
+
+pub trait ObservableEntity<E, B, M>
+where
+    E: EventType,
+    B: Bundle,
+{
+    fn id(&self) -> Entity;
+    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self;
+}
+
+impl<E, B, M> ObservableEntity<E, B, M> for EntityWorldMut<'_>
+where
+    E: EventType,
+    B: Bundle,
+{
+    fn id(&self) -> Entity {
+        self.id()
+    }
+
+    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self {
+        self.observe(observer)
+    }
+}
+
+impl<E, B, M> ObservableEntity<E, B, M> for EntityCommands<'_>
+where
+    E: EventType,
+    B: Bundle,
+{
+    fn id(&self) -> Entity {
+        self.id()
+    }
+
+    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self {
+        self.observe(observer)
     }
 }

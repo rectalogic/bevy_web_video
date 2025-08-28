@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EntityAddVideoEventListenerExt, EventWithVideoElementId, ListenerEvent, VideoElement,
-    VideoElementCreated, VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
+    EventSender, EventWithVideoElementId, ListenerEvent, VideoElement, VideoElementCreated,
+    VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
 
@@ -55,49 +55,7 @@ fn setup(
 
     let mut video_commands = commands.spawn(WebVideo::new(video_element_handle1));
 
-    video_commands.observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, registry: NonSend<VideoElementRegistry>| -> Result<()> {
-        let mut video_commands = commands.entity(trigger.target());
-        video_commands.add_video_event_listener(
-            trigger.asset_id(),
-            |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
-             mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
-             mut materials: ResMut<Assets<StandardMaterial>>,
-             registry: NonSend<VideoElementRegistry>| {
-                if let Some(element) = registry.element(trigger.asset_id())
-                    && let Some(material) = materials.get_mut(&mesh_material.0)
-                {
-                    let width = element.video_width();
-                    let height = element.video_height();
-
-                    // Scale uv transform to match video aspect ratio.
-                    // Zoom in so video fills the face.
-                    if width > height {
-                        let aspect = height as f32 / width as f32;
-                        material.uv_transform =
-                            Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
-                                * Affine2::from_scale(Vec2::new(aspect, 1.0));
-                    } else {
-                        let aspect = width as f32 / height as f32;
-                        material.uv_transform =
-                            Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
-                                * Affine2::from_scale(Vec2::new(1.0, aspect));
-                    }
-                }
-            },
-        );
-
-        #[cfg(feature = "webgpu")]
-        video_commands.add_video_event_listener(trigger.asset_id(),scale_decals::<VideoA>);
-
-        if let Some(element) = registry.element(trigger.asset_id()) {
-            element.set_cross_origin(Some("anonymous"));
-            element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
-            element.set_muted(true);
-            element.set_loop(true);
-            let _ = element.play().map_err(WebVideoError::from)?;
-        }
-        Ok(())
-    });
+    video_commands.observe(video1_created_observer);
 
     commands.spawn((
         Animated,
@@ -115,26 +73,10 @@ fn setup(
     {
         let image_handle2 = images.reserve_handle();
         let video_element_handle2 = video_elements.add(VideoElement::new(&image_handle2));
-        let video_element_id2 = video_element_handle2.id();
 
         commands
             .spawn(WebVideo::new(video_element_handle2))
-            .observe(move |trigger: Trigger<VideoElementCreated>, mut commands: Commands, registry: NonSend<VideoElementRegistry>| -> Result<()> {
-                commands.entity(trigger.target()).add_video_event_listener(video_element_id2, scale_decals::<VideoB>);
-                if let Some(element) = registry.element(trigger.asset_id())
-                   {
-                    element.set_cross_origin(Some("anonymous"));
-                    element.set_src(
-                        "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
-                    );
-                    element.set_muted(true);
-                    element.set_loop(true);
-                    let _ = element.play().map_err(WebVideoError::from)?;
-                    Ok(())
-                } else {
-                    Err("missing video".into())
-                }
-            });
+            .observe(video2_created_observer);
 
         let decal_material1 = decal_materials.add(new_decal_material(image_handle1));
         let decal_material2 = decal_materials.add(new_decal_material(image_handle2));
@@ -208,6 +150,98 @@ fn setup(
     Ok(())
 }
 
+fn video1_created_observer(
+    trigger: Trigger<VideoElementCreated>,
+    mut commands: Commands,
+    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
+    mut registry: NonSendMut<VideoElementRegistry>,
+) -> Result<()> {
+    let mut video_commands = commands.entity(trigger.target());
+    if let Some(element) = registry.element(trigger.asset_id()) {
+        loadedmetadata_event_sender.add_video_event_listener(
+            trigger.asset_id(),
+            &element,
+            &mut registry,
+            &mut video_commands,
+            scale_cube_listener,
+        );
+
+        #[cfg(feature = "webgpu")]
+        loadedmetadata_event_sender.add_video_event_listener(
+            trigger.asset_id(),
+            &element,
+            &mut registry,
+            &mut video_commands,
+            scale_decals_listener::<VideoA>,
+        );
+
+        element.set_cross_origin(Some("anonymous"));
+        element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
+        element.set_muted(true);
+        element.set_loop(true);
+        let _ = element.play().map_err(WebVideoError::from)?;
+
+        Ok(())
+    } else {
+        Err("missing video".into())
+    }
+}
+
+fn video2_created_observer(
+    trigger: Trigger<VideoElementCreated>,
+    mut commands: Commands,
+    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
+    mut registry: NonSendMut<VideoElementRegistry>,
+) -> Result<()> {
+    let mut video_commands = commands.entity(trigger.target());
+    if let Some(element) = registry.element(trigger.asset_id()) {
+        loadedmetadata_event_sender.add_video_event_listener(
+            trigger.asset_id(),
+            &element,
+            &mut registry,
+            &mut video_commands,
+            scale_decals_listener::<VideoB>,
+        );
+
+        element.set_cross_origin(Some("anonymous"));
+        element.set_src(
+            "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
+        );
+        element.set_muted(true);
+        element.set_loop(true);
+        let _ = element.play().map_err(WebVideoError::from)?;
+        Ok(())
+    } else {
+        Err("missing video".into())
+    }
+}
+
+fn scale_cube_listener(
+    trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    registry: NonSend<VideoElementRegistry>,
+) {
+    if let Some(element) = registry.element(trigger.asset_id())
+        && let Some(material) = materials.get_mut(&mesh_material.0)
+    {
+        let width = element.video_width();
+        let height = element.video_height();
+
+        // Scale uv transform to match video aspect ratio.
+        // Zoom in so video fills the face.
+        if width > height {
+            let aspect = height as f32 / width as f32;
+            material.uv_transform = Affine2::from_translation(Vec2::new((1.0 - aspect) / 2.0, 0.0))
+                * Affine2::from_scale(Vec2::new(aspect, 1.0));
+        } else {
+            let aspect = width as f32 / height as f32;
+            material.uv_transform = Affine2::from_translation(Vec2::new(0.0, (1.0 - aspect) / 2.0))
+                * Affine2::from_scale(Vec2::new(1.0, aspect));
+        }
+    }
+}
+
 #[cfg(feature = "webgpu")]
 fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMaterial> {
     ForwardDecalMaterial {
@@ -222,7 +256,7 @@ fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMate
 }
 
 #[cfg(feature = "webgpu")]
-fn scale_decals<V: Component>(
+fn scale_decals_listener<V: Component>(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
     mut decals: Query<&mut Transform, (With<ForwardDecal>, With<V>)>,
     registry: NonSend<VideoElementRegistry>,

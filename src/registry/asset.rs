@@ -98,31 +98,28 @@ fn asset_events(
                     .inspect_err(|e| warn!("{e:?}"))
                     .expect_throw("web_sys::HtmlVideoElement");
 
+                // Insert before adding listeners
                 registry.insert(asset_id, html_video_element.clone());
 
-                registry.add_event_listener(
+                loadedmetadata_event_sender.add_video_event_listener_internal(
                     asset_id,
-                    &html_video_element,
-                    ListenerEvent::<events::LoadedMetadata>::new(asset_id, None),
-                    loadedmetadata_event_sender.tx(),
+                    html_video_element.as_ref(),
+                    &mut registry,
                 );
-                registry.add_event_listener(
+                resize_event_sender.add_video_event_listener_internal(
                     asset_id,
-                    &html_video_element,
-                    ListenerEvent::<events::Resize>::new(asset_id, None),
-                    resize_event_sender.tx(),
+                    html_video_element.as_ref(),
+                    &mut registry,
                 );
-                registry.add_event_listener(
+                playing_event_sender.add_video_event_listener_internal(
                     asset_id,
-                    &html_video_element,
-                    ListenerEvent::<events::Playing>::new(asset_id, None),
-                    playing_event_sender.tx(),
+                    html_video_element.as_ref(),
+                    &mut registry,
                 );
-                registry.add_event_listener(
+                error_event_sender.add_video_event_listener_internal(
                     asset_id,
-                    &html_video_element,
-                    ListenerEvent::<events::Error>::new(asset_id, None),
-                    error_event_sender.tx(),
+                    html_video_element.as_ref(),
+                    &mut registry,
                 );
 
                 let video_element = video_elements.get_mut(asset_id).expect("VideoElement");

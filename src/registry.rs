@@ -1,7 +1,4 @@
-use crate::{
-    VideoElement,
-    event::{EventType, ListenerEvent},
-};
+use crate::VideoElement;
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
@@ -32,19 +29,11 @@ impl VideoElementRegistry {
         REGISTRY.with_borrow(|registry| registry.get(&asset_id.into()).map(|e| e.element().clone()))
     }
 
-    pub(crate) fn add_event_listener<E: EventType>(
+    pub(crate) fn add_event_listener(
         &mut self,
         asset_id: impl Into<AssetId<VideoElement>>,
-        element: &web_sys::HtmlVideoElement,
-        event: ListenerEvent<E>,
-        tx: crossbeam_channel::Sender<ListenerEvent<E>>,
+        listener: EventListener,
     ) {
-        let listener =
-            EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
-                if let Err(err) = tx.send(event) {
-                    warn!("Failed to ad video event listener: {err:?}");
-                };
-            });
         REGISTRY.with_borrow_mut(|registry| {
             if let Some(registered_element) = registry.get_mut(&asset_id.into()) {
                 registered_element.listeners.push(listener);
