@@ -4,54 +4,66 @@ use crate::{
 };
 use bevy::prelude::*;
 use gloo_events::EventListener;
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
 
 pub mod asset;
 
-// wasm on web is single threaded, so this should be OK
-thread_local! {
-    static REGISTRY: RefCell<ElementRegistry> =  RefCell::new(ElementRegistry::default());
+pub fn plugin(app: &mut App) {
+    app.add_plugins(asset::plugin)
+        .insert_non_send_resource(VideoElementRegistry::new());
 }
 
-#[derive(Default)]
-pub struct ElementRegistry {
-    pub elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
+#[derive(Clone)]
+pub struct VideoElementRegistry {
+    _nonsend: PhantomData<*mut u8>,
 }
 
-impl ElementRegistry {
-    fn insert(&mut self, asset_id: AssetId<VideoElement>, video: web_sys::HtmlVideoElement) {
-        self.elements
-            .insert(asset_id, RegisteredElement::new(video));
+impl VideoElementRegistry {
+    fn new() -> Self {
+        Self {
+            _nonsend: PhantomData,
+        }
+    }
+
+    pub fn element(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+    ) -> Option<web_sys::HtmlVideoElement> {
+        REGISTRY.with_borrow(|registry| registry.get(&asset_id.into()).map(|e| e.element().clone()))
+    }
+
+    pub(crate) fn add_event_listener<E: EventType>(
+        &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::HtmlVideoElement,
+        event: ListenerEvent<E>,
+        tx: crossbeam_channel::Sender<ListenerEvent<E>>,
+    ) {
+        let listener =
+            EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
+                if let Err(err) = tx.send(event) {
+                    warn!("Failed to ad video event listener: {err:?}");
+                };
+            });
+        REGISTRY.with_borrow_mut(|registry| {
+            if let Some(registered_element) = registry.get_mut(&asset_id.into()) {
+                registered_element.listeners.push(listener);
+            }
+        });
+    }
+
+    fn insert(&mut self, asset_id: AssetId<VideoElement>, element: web_sys::HtmlVideoElement) {
+        REGISTRY
+            .with_borrow_mut(|registry| registry.insert(asset_id, RegisteredElement::new(element)));
     }
 
     fn remove(&mut self, asset_id: impl Into<AssetId<VideoElement>>) -> Option<RegisteredElement> {
-        self.elements.remove(&asset_id.into())
+        REGISTRY.with_borrow_mut(|registry| registry.remove(&asset_id.into()))
     }
+}
 
-    pub fn get(&self, asset_id: impl Into<AssetId<VideoElement>>) -> Option<&RegisteredElement> {
-        self.elements.get(&asset_id.into())
-    }
-
-    pub fn get_mut(
-        &mut self,
-        asset_id: impl Into<AssetId<VideoElement>>,
-    ) -> Option<&mut RegisteredElement> {
-        self.elements.get_mut(&asset_id.into())
-    }
-
-    pub fn with_borrow<F, R>(f: F) -> R
-    where
-        F: FnOnce(&Self) -> R,
-    {
-        REGISTRY.with_borrow(f)
-    }
-
-    pub fn with_borrow_mut<F, R>(f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        REGISTRY.with_borrow_mut(f)
-    }
+thread_local! {
+    static REGISTRY: RefCell<HashMap<AssetId<VideoElement>, RegisteredElement>> =  RefCell::new(HashMap::default());
 }
 
 #[derive(Debug)]
@@ -68,24 +80,7 @@ impl RegisteredElement {
         }
     }
 
-    pub fn element(&self) -> &web_sys::HtmlVideoElement {
+    fn element(&self) -> &web_sys::HtmlVideoElement {
         &self.element
-    }
-
-    pub fn add_event_listener<E: EventType>(
-        &mut self,
-        event: ListenerEvent<E>,
-        tx: crossbeam_channel::Sender<ListenerEvent<E>>,
-    ) {
-        let listener = EventListener::new(
-            &self.element,
-            E::EVENT_NAME,
-            move |_event: &web_sys::Event| {
-                if let Err(err) = tx.send(event) {
-                    warn!("Failed to ad video event listener: {err:?}");
-                };
-            },
-        );
-        self.listeners.push(listener);
     }
 }

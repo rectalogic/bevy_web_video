@@ -1,7 +1,6 @@
 use crate::{
-    WebVideo,
+    VideoElementRegistry, WebVideo,
     event::{EventSender, EventWithVideoElementId, ListenerEvent, events},
-    registry::ElementRegistry,
 };
 use bevy::{
     asset::{AsAssetId, AssetEvents, RenderAssetUsages},
@@ -60,11 +59,6 @@ impl VideoElement {
         self.target_image_id
     }
 
-    pub fn element(&self) -> Option<web_sys::HtmlVideoElement> {
-        let asset_id = self.asset_id?;
-        ElementRegistry::with_borrow(|registry| registry.get(asset_id).map(|e| e.element().clone()))
-    }
-
     pub(crate) fn is_renderable(&self) -> bool {
         self.renderable
     }
@@ -85,72 +79,79 @@ fn asset_events(
     resize_event_sender: Res<EventSender<events::Resize>>,
     playing_event_sender: Res<EventSender<events::Playing>>,
     error_event_sender: Res<EventSender<events::Error>>,
+    mut registry: NonSendMut<VideoElementRegistry>,
 ) {
     for event in events.read() {
         match *event {
             AssetEvent::Removed { id: asset_id } | AssetEvent::Unused { id: asset_id } => {
-                ElementRegistry::with_borrow_mut(|registry| registry.remove(asset_id));
+                registry.remove(asset_id);
             }
             AssetEvent::Added { id: asset_id } => {
-                ElementRegistry::with_borrow_mut(|registry| {
-                    let html_video_element = web_sys::window()
-                        .expect_throw("window")
-                        .document()
-                        .expect_throw("document")
-                        .create_element("video")
-                        .inspect_err(|e| warn!("{e:?}"))
-                        .unwrap_throw()
-                        .dyn_into::<web_sys::HtmlVideoElement>()
-                        .inspect_err(|e| warn!("{e:?}"))
-                        .expect_throw("web_sys::HtmlVideoElement");
+                let html_video_element = web_sys::window()
+                    .expect_throw("window")
+                    .document()
+                    .expect_throw("document")
+                    .create_element("video")
+                    .inspect_err(|e| warn!("{e:?}"))
+                    .unwrap_throw()
+                    .dyn_into::<web_sys::HtmlVideoElement>()
+                    .inspect_err(|e| warn!("{e:?}"))
+                    .expect_throw("web_sys::HtmlVideoElement");
 
-                    registry.insert(asset_id, html_video_element);
-                    let registered_element = registry.get_mut(asset_id).expect("registry item");
+                registry.insert(asset_id, html_video_element.clone());
 
-                    let video_element = video_elements.get_mut(asset_id).expect("VideoElement");
-                    video_element.asset_id = Some(asset_id);
+                registry.add_event_listener(
+                    asset_id,
+                    &html_video_element,
+                    ListenerEvent::<events::LoadedMetadata>::new(asset_id, None),
+                    loadedmetadata_event_sender.tx(),
+                );
+                registry.add_event_listener(
+                    asset_id,
+                    &html_video_element,
+                    ListenerEvent::<events::Resize>::new(asset_id, None),
+                    resize_event_sender.tx(),
+                );
+                registry.add_event_listener(
+                    asset_id,
+                    &html_video_element,
+                    ListenerEvent::<events::Playing>::new(asset_id, None),
+                    playing_event_sender.tx(),
+                );
+                registry.add_event_listener(
+                    asset_id,
+                    &html_video_element,
+                    ListenerEvent::<events::Error>::new(asset_id, None),
+                    error_event_sender.tx(),
+                );
 
-                    registered_element.add_event_listener(
-                        ListenerEvent::<events::LoadedMetadata>::new(asset_id, None),
-                        loadedmetadata_event_sender.tx(),
-                    );
-                    registered_element.add_event_listener(
-                        ListenerEvent::<events::Resize>::new(asset_id, None),
-                        resize_event_sender.tx(),
-                    );
-                    registered_element.add_event_listener(
-                        ListenerEvent::<events::Playing>::new(asset_id, None),
-                        playing_event_sender.tx(),
-                    );
-                    registered_element.add_event_listener(
-                        ListenerEvent::<events::Error>::new(asset_id, None),
-                        error_event_sender.tx(),
-                    );
+                let video_element = video_elements.get_mut(asset_id).expect("VideoElement");
+                video_element.asset_id = Some(asset_id);
 
-                    // Now that we have registered our listeners, allow user to access the element
-                    web_videos
-                        .iter()
-                        .filter_map(|(entity, web_video)| {
-                            if web_video.as_asset_id() == asset_id {
-                                Some((entity, asset_id))
-                            } else {
-                                None
-                            }
-                        })
-                        .for_each(|(entity, asset_id)| {
-                            commands.trigger_targets(VideoElementCreated::new(asset_id), entity)
-                        });
-                });
+                // Now that we have registered our listeners, allow user to access the element
+                web_videos
+                    .iter()
+                    .filter_map(|(entity, web_video)| {
+                        if web_video.as_asset_id() == asset_id {
+                            Some((entity, asset_id))
+                        } else {
+                            None
+                        }
+                    })
+                    .for_each(|(entity, asset_id)| {
+                        commands.trigger_targets(VideoElementCreated::new(asset_id), entity)
+                    });
             }
             _ => {}
         }
     }
 }
 
-fn resize_image(video_element: &VideoElement, images: &mut Assets<Image>) {
-    let Some(element) = video_element.element() else {
-        return;
-    };
+fn resize_image(
+    video_element: &VideoElement,
+    element: &web_sys::HtmlVideoElement,
+    images: &mut Assets<Image>,
+) {
     let mut image = Image::new_uninit(
         Extent3d {
             width: element.video_width(),
@@ -169,34 +170,38 @@ fn on_loadedmetadata(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
+    registry: NonSend<VideoElementRegistry>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
-        return;
+    let asset_id = trigger.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
+        && let Some(element) = registry.element(asset_id)
+    {
+        resize_image(video_element, &element, &mut images);
     };
-    resize_image(video_element, &mut images);
 }
 
 fn on_resize(
     trigger: Trigger<ListenerEvent<events::Resize>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
+    registry: NonSend<VideoElementRegistry>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
-        return;
+    let asset_id = trigger.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
+        && let Some(element) = registry.element(asset_id)
+    {
+        resize_image(video_element, &element, &mut images);
     };
-    resize_image(video_element, &mut images);
 }
 
 fn on_error(
     trigger: Trigger<ListenerEvent<events::Error>>,
     video_elements: Res<Assets<VideoElement>>,
 ) {
-    let Some(video_element) = video_elements.get(trigger.asset_id()) else {
-        return;
+    let asset_id = trigger.asset_id();
+    if video_elements.get(asset_id).is_none() {
+        warn!("Video asset {:?} failed to load with error", asset_id);
     };
-    if let Some(element) = video_element.element() {
-        warn!("Video {:?} failed with error", element);
-    }
 }
 
 fn on_playing(

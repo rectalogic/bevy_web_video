@@ -1,13 +1,13 @@
 use crate::{
-    WebVideo,
+    VideoElement, VideoElementRegistry,
     event::{EventSender, EventType, ListenerEvent},
-    registry::ElementRegistry,
 };
-use bevy::{asset::AsAssetId, ecs::system::IntoObserverSystem, prelude::*};
+use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 
 pub trait EntityAddVideoEventListenerExt {
     fn add_video_event_listener<E, B, M>(
         &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
@@ -18,21 +18,25 @@ pub trait EntityAddVideoEventListenerExt {
 impl EntityAddVideoEventListenerExt for EntityCommands<'_> {
     fn add_video_event_listener<E, B, M>(
         &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
         E: EventType,
         B: Bundle,
     {
-        self.queue(|mut entity: EntityWorldMut| {
-            entity.add_video_event_listener(observer);
+        let asset_id = asset_id.into();
+        self.queue(move |mut entity: EntityWorldMut| {
+            entity.add_video_event_listener(asset_id, observer);
         })
     }
 }
 
+//XXX not safe
 impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
     fn add_video_event_listener<E, B, M>(
         &mut self,
+        asset_id: impl Into<AssetId<VideoElement>>,
         observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
     ) -> &mut Self
     where
@@ -40,22 +44,25 @@ impl EntityAddVideoEventListenerExt for EntityWorldMut<'_> {
         B: Bundle,
     {
         let target = self.id();
+        let asset_id = asset_id.into();
+
         let Some(event_sender) = self.get_resource::<EventSender<E>>() else {
             warn!("Video event type {} not registered", E::EVENT_NAME);
             return self;
         };
-        let Some(web_video) = self.get::<WebVideo>() else {
-            warn!("No WebVideo component found on entity {}", target);
-            return self;
-        };
-        let asset_id = web_video.as_asset_id();
         let tx = event_sender.tx();
-        ElementRegistry::with_borrow_mut(|registry| {
-            if let Some(element) = registry.get_mut(asset_id) {
-                element.add_event_listener(ListenerEvent::<E>::new(asset_id, Some(target)), tx);
-                self.observe(observer);
+        self.world_scope(|world: &mut World| {
+            if let Some(mut registry) = world.get_non_send_resource_mut::<VideoElementRegistry>()
+                && let Some(element) = registry.element(asset_id)
+            {
+                registry.add_event_listener(
+                    asset_id,
+                    &element,
+                    ListenerEvent::<E>::new(asset_id, Some(target)),
+                    tx,
+                );
             }
         });
-        self
+        self.observe(observer)
     }
 }

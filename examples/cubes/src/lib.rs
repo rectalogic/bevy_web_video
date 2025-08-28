@@ -6,7 +6,7 @@ use bevy::{
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
     EntityAddVideoEventListenerExt, EventWithVideoElementId, ListenerEvent, VideoElement,
-    VideoElementCreated, WebVideo, WebVideoError, WebVideoPlugin, events,
+    VideoElementCreated, VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
 
@@ -55,18 +55,15 @@ fn setup(
 
     let mut video_commands = commands.spawn(WebVideo::new(video_element_handle1));
 
-    #[cfg(feature = "webgpu")]
-    video_commands.add_video_event_listener(scale_decals::<VideoA>);
-
-    video_commands.observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
+    video_commands.observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, registry: NonSend<VideoElementRegistry>| -> Result<()> {
         let mut video_commands = commands.entity(trigger.target());
         video_commands.add_video_event_listener(
+            trigger.asset_id(),
             |trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
              mesh_material: Single<&MeshMaterial3d<StandardMaterial>, With<VideoA>>,
              mut materials: ResMut<Assets<StandardMaterial>>,
-             video_elements: Res<Assets<VideoElement>>| {
-                if let Some(video_element) = video_elements.get(trigger.asset_id())
-                    && let Some(element) = video_element.element()
+             registry: NonSend<VideoElementRegistry>| {
+                if let Some(element) = registry.element(trigger.asset_id())
                     && let Some(material) = materials.get_mut(&mesh_material.0)
                 {
                     let width = element.video_width();
@@ -88,20 +85,18 @@ fn setup(
                 }
             },
         );
-        #[cfg(feature = "webgpu")]
-        video_commands.add_video_event_listener(scale_decals::<VideoA>);
 
-        if let Some(video_element) = video_elements.get(trigger.asset_id())
-            && let Some(video) = video_element.element() {
-            video.set_cross_origin(Some("anonymous"));
-            video.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
-            video.set_muted(true);
-            video.set_loop(true);
-            let _ = video.play().map_err(WebVideoError::from)?;
-            Ok(())
-        } else {
-            Err("Missing video".into())
+        #[cfg(feature = "webgpu")]
+        video_commands.add_video_event_listener(trigger.asset_id(),scale_decals::<VideoA>);
+
+        if let Some(element) = registry.element(trigger.asset_id()) {
+            element.set_cross_origin(Some("anonymous"));
+            element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
+            element.set_muted(true);
+            element.set_loop(true);
+            let _ = element.play().map_err(WebVideoError::from)?;
         }
+        Ok(())
     });
 
     commands.spawn((
@@ -120,20 +115,21 @@ fn setup(
     {
         let image_handle2 = images.reserve_handle();
         let video_element_handle2 = video_elements.add(VideoElement::new(&image_handle2));
+        let video_element_id2 = video_element_handle2.id();
 
         commands
             .spawn(WebVideo::new(video_element_handle2))
-            .observe(|trigger: Trigger<VideoElementCreated>, mut commands: Commands, video_elements: Res<Assets<VideoElement>>| -> Result<()> {
-                commands.entity(trigger.target()).add_video_event_listener(scale_decals::<VideoB>);
-                if let Some(video_element) = video_elements.get(trigger.asset_id())
-                    && let Some(video) = video_element.element() {
-                    video.set_cross_origin(Some("anonymous"));
-                    video.set_src(
+            .observe(move |trigger: Trigger<VideoElementCreated>, mut commands: Commands, registry: NonSend<VideoElementRegistry>| -> Result<()> {
+                commands.entity(trigger.target()).add_video_event_listener(video_element_id2, scale_decals::<VideoB>);
+                if let Some(element) = registry.element(trigger.asset_id())
+                   {
+                    element.set_cross_origin(Some("anonymous"));
+                    element.set_src(
                         "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
                     );
-                    video.set_muted(true);
-                    video.set_loop(true);
-                    let _ = video.play().map_err(WebVideoError::from)?;
+                    element.set_muted(true);
+                    element.set_loop(true);
+                    let _ = element.play().map_err(WebVideoError::from)?;
                     Ok(())
                 } else {
                     Err("missing video".into())
@@ -229,13 +225,11 @@ fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMate
 fn scale_decals<V: Component>(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
     mut decals: Query<&mut Transform, (With<ForwardDecal>, With<V>)>,
-    video_elements: Res<Assets<VideoElement>>,
+    registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(video_element) = video_elements.get(trigger.asset_id())
-        && let Some(video) = video_element.element()
-    {
-        let width = video.video_width();
-        let height = video.video_height();
+    if let Some(element) = registry.element(trigger.asset_id()) {
+        let width = element.video_width();
+        let height = element.video_height();
         for mut transform in &mut decals {
             // Scale decal to match video aspect ratio
             if width > height {
