@@ -7,7 +7,7 @@ pub(crate) mod render;
 
 pub use crate::{
     event::{
-        EventListenerAppExt, EventSender, EventType, EventWithVideoElementId, ListenerEvent,
+        EventListenerAppExt, EventSender, EventType, EventWithAssetId, ListenerEvent,
         ObservableEntity, events,
     },
     registry::{

@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy::{math::Affine2, prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EventSender, EventWithVideoElementId, ListenerEvent, VideoElement, VideoElementCreated,
+    EventSender, EventWithAssetId, ListenerEvent, VideoElement, VideoElementCreated,
     VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;

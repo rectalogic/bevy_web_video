@@ -97,11 +97,13 @@ impl<E: EventType> ListenerEvent<E> {
     }
 }
 
-pub trait EventWithVideoElementId {
-    fn asset_id(&self) -> AssetId<VideoElement>;
+pub trait EventWithAssetId: Event {
+    type Asset: Asset;
+    fn asset_id(&self) -> AssetId<Self::Asset>;
 }
 
-impl<E: EventType> EventWithVideoElementId for ListenerEvent<E> {
+impl<E: EventType> EventWithAssetId for ListenerEvent<E> {
+    type Asset = VideoElement;
     fn asset_id(&self) -> AssetId<VideoElement> {
         self.asset_id
     }

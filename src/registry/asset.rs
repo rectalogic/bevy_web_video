@@ -1,6 +1,6 @@
 use crate::{
     VideoElementRegistry, WebVideo,
-    event::{EventSender, EventWithVideoElementId, ListenerEvent, events},
+    event::{EventSender, EventWithAssetId, ListenerEvent, events},
 };
 use bevy::{
     asset::{AsAssetId, AssetEvents, RenderAssetUsages},
@@ -33,7 +33,8 @@ impl VideoElementCreated {
     }
 }
 
-impl EventWithVideoElementId for VideoElementCreated {
+impl EventWithAssetId for VideoElementCreated {
+    type Asset = VideoElement;
     fn asset_id(&self) -> AssetId<VideoElement> {
         self.asset_id
     }
