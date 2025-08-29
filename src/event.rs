@@ -1,256 +1,140 @@
+use crate::{VideoElement, VideoElementRegistry};
 use bevy::prelude::*;
-use enumset::EnumSetType;
+use crossbeam_channel::unbounded;
+use gloo_events::EventListener;
+use std::marker::PhantomData;
 
-use crate::{VideoElement, WebVideo};
-
-pub(crate) struct VideoEventMessage {
-    pub asset_id: AssetId<Image>,
-    pub event_type: VideoEvents,
-}
-
-#[derive(EnumSetType, Debug)]
-pub enum VideoEvents {
-    Abort,
-    CanPlay,
-    CanPlayThrough,
-    CueChange,
-    DurationChanged,
-    Emptied,
-    Ended,
-    Error,
-    LoadedData,
-    LoadedMetadata,
-    LoadStart,
-    Pause,
-    Play,
-    Playing,
-    Progress,
-    RateChange,
-    Resize,
-    Seeked,
-    Seeking,
-    Stalled,
-    Suspend,
-    TimeUpdate,
-    VolumeChange,
-    Waiting,
-    WaitingForKey,
+pub fn plugin(app: &mut App) {
+    app.add_listener_event::<events::LoadedMetadata>()
+        .add_listener_event::<events::Resize>()
+        .add_listener_event::<events::Playing>()
+        .add_listener_event::<events::Error>();
 }
 
-#[derive(Copy, Clone, Debug, Event)]
-pub struct VideoEvent<E>
-where
-    E: std::fmt::Debug + Copy + Clone + Send + Sync,
-{
-    pub asset_id: AssetId<Image>,
-    pub event: E,
+pub trait EventListenerAppExt {
+    fn add_listener_event<E: EventType>(&mut self) -> &mut Self;
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Abort;
-#[derive(Copy, Clone, Debug)]
-pub struct CanPlay;
-#[derive(Copy, Clone, Debug)]
-pub struct CanPlayThrough;
-#[derive(Copy, Clone, Debug)]
-pub struct CueChange {
-    pub cue: Option<Cue>,
+impl EventListenerAppExt for App {
+    fn add_listener_event<E: EventType>(&mut self) -> &mut Self {
+        // Check if already initialized
+        if self.world().contains_resource::<Events<ListenerEvent<E>>>() {
+            return self;
+        }
+        let (tx, rx) = unbounded();
+        self.add_event::<ListenerEvent<E>>()
+            .insert_resource(EventSender::<E>(tx))
+            .insert_resource(EventReceiver::<E>(rx))
+            .add_systems(Update, listen_for_events::<E>)
+    }
 }
-#[derive(Copy, Clone, Debug)]
-pub struct Cue {
-    pub start_time: f64,
-    pub end_time: f64,
-}
-#[derive(Copy, Clone, Debug)]
-pub struct DurationChanged;
-#[derive(Copy, Clone, Debug)]
-pub struct Emptied;
-#[derive(Copy, Clone, Debug)]
-pub struct Ended;
-#[derive(Copy, Clone, Debug)]
-pub struct Error;
-#[derive(Copy, Clone, Debug)]
-pub struct LoadedData;
-#[derive(Copy, Clone, Debug)]
-pub struct LoadedMetadata {
-    pub width: u32,
-    pub height: u32,
-}
-#[derive(Copy, Clone, Debug)]
-pub struct LoadStart;
-#[derive(Copy, Clone, Debug)]
-pub struct Pause;
-#[derive(Copy, Clone, Debug)]
-pub struct Play;
-#[derive(Copy, Clone, Debug)]
-pub struct Playing;
-#[derive(Copy, Clone, Debug)]
-pub struct Progress;
-#[derive(Copy, Clone, Debug)]
-pub struct RateChange;
-#[derive(Copy, Clone, Debug)]
-pub struct Resize {
-    pub width: u32,
-    pub height: u32,
-}
-#[derive(Copy, Clone, Debug)]
-pub struct Seeked;
-#[derive(Copy, Clone, Debug)]
-pub struct Seeking;
-#[derive(Copy, Clone, Debug)]
-pub struct Stalled;
-#[derive(Copy, Clone, Debug)]
-pub struct Suspend;
-#[derive(Copy, Clone, Debug)]
-pub struct TimeUpdate;
-#[derive(Copy, Clone, Debug)]
-pub struct VolumeChange;
-#[derive(Copy, Clone, Debug)]
-pub struct Waiting;
-#[derive(Copy, Clone, Debug)]
-pub struct WaitingForKey;
 
-impl From<VideoEvents> for &'static str {
-    fn from(value: VideoEvents) -> Self {
-        match value {
-            VideoEvents::Abort => "abort",
-            VideoEvents::CanPlay => "canplay",
-            VideoEvents::CanPlayThrough => "canplaythrough",
-            VideoEvents::CueChange => "cuechange",
-            VideoEvents::DurationChanged => "durationchanged",
-            VideoEvents::Emptied => "emptied",
-            VideoEvents::Ended => "ended",
-            VideoEvents::Error => "error",
-            VideoEvents::LoadedData => "loadeddata",
-            VideoEvents::LoadedMetadata => "loadedmetadata",
-            VideoEvents::LoadStart => "loadstart",
-            VideoEvents::Pause => "pause",
-            VideoEvents::Play => "play",
-            VideoEvents::Playing => "playing",
-            VideoEvents::Progress => "progress",
-            VideoEvents::RateChange => "ratechange",
-            VideoEvents::Resize => "resize",
-            VideoEvents::Seeked => "seeked",
-            VideoEvents::Seeking => "seeking",
-            VideoEvents::Stalled => "stalled",
-            VideoEvents::Suspend => "suspend",
-            VideoEvents::TimeUpdate => "timeupdate",
-            VideoEvents::VolumeChange => "volumechange",
-            VideoEvents::Waiting => "waiting",
-            VideoEvents::WaitingForKey => "waitingforkey",
+#[derive(Resource)]
+pub struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEvent<E>>);
+
+impl<E: EventType> EventSender<E> {
+    pub fn enable_element_event_observers(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+        target: Entity,
+    ) -> &Self {
+        self.add_listener(asset_id, element, registry, Some(target));
+        self
+    }
+
+    pub(crate) fn add_video_event_listener_internal(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+    ) {
+        self.add_listener(asset_id, element, registry, None);
+    }
+
+    fn add_listener(
+        &self,
+        asset_id: impl Into<AssetId<VideoElement>>,
+        element: &web_sys::EventTarget,
+        registry: &mut VideoElementRegistry,
+        target: Option<Entity>,
+    ) {
+        let tx = self.0.clone();
+        let asset_id = asset_id.into();
+        let listener =
+            EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
+                if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, target)) {
+                    warn!("Failed to fire video event {}: {err:?}", E::EVENT_NAME);
+                };
+            });
+        registry.add_event_listener(asset_id, listener);
+    }
+}
+
+#[derive(Resource)]
+struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
+
+#[derive(Event, Clone)]
+pub struct ListenerEvent<E: EventType> {
+    asset_id: AssetId<VideoElement>,
+    target: Option<Entity>,
+    _phantom: PhantomData<E>,
+}
+
+impl<E: EventType> ListenerEvent<E> {
+    pub(crate) fn new(asset_id: AssetId<VideoElement>, target: Option<Entity>) -> Self {
+        Self {
+            asset_id,
+            target,
+            _phantom: PhantomData,
         }
     }
 }
 
-struct TextTrackCueListIter {
-    cues: web_sys::TextTrackCueList,
-    index: u32,
+pub trait EventWithAssetId: Event {
+    type Asset: Asset;
+    fn asset_id(&self) -> AssetId<Self::Asset>;
 }
-impl TextTrackCueListIter {
-    fn new(cues: web_sys::TextTrackCueList) -> Self {
-        Self { cues, index: 0 }
-    }
-}
-impl Iterator for TextTrackCueListIter {
-    type Item = web_sys::VttCue;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let index = self.index;
-        self.index += 1;
-        self.cues.get(index)
+impl<E: EventType> EventWithAssetId for ListenerEvent<E> {
+    type Asset = VideoElement;
+    fn asset_id(&self) -> AssetId<VideoElement> {
+        self.asset_id
     }
 }
 
-pub(crate) fn dispatch_events(
-    event_type: VideoEvents,
-    asset_id: AssetId<Image>,
-    video: &VideoElement,
-    commands: &mut Commands,
-    videos: Query<(Entity, &WebVideo)>,
-) {
-    match event_type {
-        VideoEvents::Abort => trigger_event(asset_id, Abort, commands, videos),
-        VideoEvents::CanPlay => trigger_event(asset_id, CanPlay, commands, videos),
-        VideoEvents::CanPlayThrough => trigger_event(asset_id, CanPlayThrough, commands, videos),
-        VideoEvents::CueChange => {
-            if let Some(ref track) = video.text_track {
-                match track.active_cues() {
-                    Some(cues) => TextTrackCueListIter::new(cues.clone()).for_each(|cue| {
-                        trigger_event(
-                            asset_id,
-                            CueChange {
-                                cue: Some(Cue {
-                                    start_time: cue.start_time(),
-                                    end_time: cue.end_time(),
-                                }),
-                            },
-                            commands,
-                            videos,
-                        )
-                    }),
-                    None => trigger_event(asset_id, CueChange { cue: None }, commands, videos),
-                }
+pub trait EventType: Copy + Clone + Send + Sync + 'static {
+    const EVENT_NAME: &'static str;
+}
+
+pub mod events {
+    use super::*;
+
+    #[macro_export]
+    macro_rules! new_event_type {
+        ($name:ident, $event_name:literal) => {
+            #[derive(Event, Copy, Clone, Debug)]
+            pub struct $name;
+
+            impl EventType for $name {
+                const EVENT_NAME: &'static str = $event_name;
             }
+        };
+    }
+
+    new_event_type!(LoadedMetadata, "loadedmetadata");
+    new_event_type!(Resize, "resize");
+    new_event_type!(Playing, "playing");
+    new_event_type!(Error, "error");
+}
+
+fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands: Commands) {
+    while let Ok(event) = receiver.0.try_recv() {
+        if let Some(target) = event.target {
+            commands.trigger_targets(event, target);
+        } else {
+            commands.trigger(event);
         }
-        VideoEvents::DurationChanged => trigger_event(asset_id, DurationChanged, commands, videos),
-        VideoEvents::Emptied => trigger_event(asset_id, Emptied, commands, videos),
-        VideoEvents::Ended => trigger_event(asset_id, Ended, commands, videos),
-        VideoEvents::Error => trigger_event(asset_id, Error, commands, videos),
-        VideoEvents::LoadedData => trigger_event(asset_id, LoadedData, commands, videos),
-        VideoEvents::LoadedMetadata => trigger_event(
-            asset_id,
-            LoadedMetadata {
-                width: video.element.video_width(),
-                height: video.element.video_height(),
-            },
-            commands,
-            videos,
-        ),
-        VideoEvents::LoadStart => trigger_event(asset_id, LoadStart, commands, videos),
-        VideoEvents::Pause => trigger_event(asset_id, Pause, commands, videos),
-        VideoEvents::Play => trigger_event(asset_id, Play, commands, videos),
-        VideoEvents::Playing => trigger_event(asset_id, Playing, commands, videos),
-        VideoEvents::Progress => trigger_event(asset_id, Progress, commands, videos),
-        VideoEvents::RateChange => trigger_event(asset_id, RateChange, commands, videos),
-        VideoEvents::Resize => trigger_event(
-            asset_id,
-            Resize {
-                width: video.element.video_width(),
-                height: video.element.video_height(),
-            },
-            commands,
-            videos,
-        ),
-        VideoEvents::Seeked => trigger_event(asset_id, Seeked, commands, videos),
-        VideoEvents::Seeking => trigger_event(asset_id, Seeking, commands, videos),
-        VideoEvents::Stalled => trigger_event(asset_id, Stalled, commands, videos),
-        VideoEvents::Suspend => trigger_event(asset_id, Suspend, commands, videos),
-        VideoEvents::TimeUpdate => trigger_event(asset_id, TimeUpdate, commands, videos),
-        VideoEvents::VolumeChange => trigger_event(asset_id, VolumeChange, commands, videos),
-        VideoEvents::Waiting => trigger_event(asset_id, Waiting, commands, videos),
-        VideoEvents::WaitingForKey => trigger_event(asset_id, WaitingForKey, commands, videos),
-    };
-}
-
-fn trigger_event<E>(
-    asset_id: AssetId<Image>,
-    event: E,
-    commands: &mut Commands,
-    videos: Query<(Entity, &WebVideo)>,
-) where
-    E: std::fmt::Debug + Copy + Clone + Send + Sync + 'static,
-{
-    let video_event = VideoEvent { asset_id, event };
-    videos
-        .iter()
-        .filter_map(|(entity, video)| {
-            if video.0 == asset_id {
-                Some(entity)
-            } else {
-                None
-            }
-        })
-        .for_each(|entity| commands.trigger_targets(video_event, entity));
-
-    commands.trigger(video_event);
+    }
 }
