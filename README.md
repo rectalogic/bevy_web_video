@@ -7,7 +7,11 @@ See [examples/cubes/src/lib.rs](examples/cubes/src/lib.rs) for example use.
 
 To run the demo locally:
 ```sh-session
-$ cargo install wasm-pack
-$ wasm-pack build --target web examples/cubes --features webgpu
+$ cargo install wasm-opt wasm-bindgen-cli
+$ cargo build --profile debug --target wasm32-unknown-unknown --example cubes
+$ wasm-bindgen --out-dir examples/wasm/target --out-name wasm_example --target web target/wasm32-unknown-unknown/debug/examples/{example}.wasm
+$ wasm-opt -Oz --output examples/wasm/target/wasm_example_bg.wasm.optimized examples/wasm/target/wasm_example_bg.wasm
+# rename wasm.optimized
 $ python3 -m http.server -d examples/cubes  # now open http://localhost:8000/
 ```
+XXX see https://github.com/bevyengine/bevy/blob/6608d9815da46e1c79ec3887568a068e63065f49/tools/build-wasm-example/src/main.rs
