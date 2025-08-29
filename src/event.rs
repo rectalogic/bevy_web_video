@@ -1,5 +1,5 @@
 use crate::{VideoElement, VideoElementRegistry};
-use bevy::{ecs::system::IntoObserverSystem, prelude::*};
+use bevy::prelude::*;
 use crossbeam_channel::unbounded;
 use gloo_events::EventListener;
 use std::marker::PhantomData;
@@ -33,20 +33,15 @@ impl EventListenerAppExt for App {
 pub struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEvent<E>>);
 
 impl<E: EventType> EventSender<E> {
-    pub fn add_video_event_listener<'o, B, M, O>(
+    pub fn enable_element_event_observers(
         &self,
         asset_id: impl Into<AssetId<VideoElement>>,
         element: &web_sys::EventTarget,
         registry: &mut VideoElementRegistry,
-        observable: &'o mut O,
-        observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>,
-    ) -> &'o mut O
-    where
-        B: Bundle,
-        O: ObservableEntity<E, B, M>,
-    {
-        self.add_listener(asset_id, element, registry, Some(observable.id()));
-        observable.observe(observer)
+        target: Entity,
+    ) -> &Self {
+        self.add_listener(asset_id, element, registry, Some(target));
+        self
     }
 
     pub(crate) fn add_video_event_listener_internal(
@@ -80,7 +75,7 @@ impl<E: EventType> EventSender<E> {
 #[derive(Resource)]
 struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
 
-#[derive(Event, Copy, Clone)]
+#[derive(Event, Clone)]
 pub struct ListenerEvent<E: EventType> {
     asset_id: AssetId<VideoElement>,
     target: Option<Entity>,
@@ -141,42 +136,5 @@ fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands
         } else {
             commands.trigger(event);
         }
-    }
-}
-
-pub trait ObservableEntity<E, B, M>
-where
-    E: EventType,
-    B: Bundle,
-{
-    fn id(&self) -> Entity;
-    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self;
-}
-
-impl<E, B, M> ObservableEntity<E, B, M> for EntityWorldMut<'_>
-where
-    E: EventType,
-    B: Bundle,
-{
-    fn id(&self) -> Entity {
-        self.id()
-    }
-
-    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self {
-        self.observe(observer)
-    }
-}
-
-impl<E, B, M> ObservableEntity<E, B, M> for EntityCommands<'_>
-where
-    E: EventType,
-    B: Bundle,
-{
-    fn id(&self) -> Entity {
-        self.id()
-    }
-
-    fn observe(&mut self, observer: impl IntoObserverSystem<ListenerEvent<E>, B, M>) -> &mut Self {
-        self.observe(observer)
     }
 }

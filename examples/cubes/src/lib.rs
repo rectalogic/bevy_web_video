@@ -150,22 +150,17 @@ fn video1_created_observer(
     loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
     mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
-    let mut video_commands = commands.entity(trigger.target());
     if let Some(element) = registry.element(trigger.asset_id()) {
-        loadedmetadata_event_sender.add_video_event_listener(
-            trigger.asset_id(),
-            &element,
-            &mut registry,
-            &mut video_commands,
-            scale_spincube_listener,
-        );
+        commands
+            .entity(trigger.target())
+            .observe(scale_spincube_listener)
+            .observe(scale_decals_listener::<DecalMaterial1>);
 
-        loadedmetadata_event_sender.add_video_event_listener(
+        loadedmetadata_event_sender.enable_element_event_observers(
             trigger.asset_id(),
             &element,
             &mut registry,
-            &mut video_commands,
-            scale_decals_listener::<DecalMaterial1>,
+            trigger.target(),
         );
 
         element.set_cross_origin(Some("anonymous"));
@@ -186,14 +181,15 @@ fn video2_created_observer(
     loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
     mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
-    let mut video_commands = commands.entity(trigger.target());
     if let Some(element) = registry.element(trigger.asset_id()) {
-        loadedmetadata_event_sender.add_video_event_listener(
+        commands
+            .entity(trigger.target())
+            .observe(scale_decals_listener::<DecalMaterial2>);
+        loadedmetadata_event_sender.enable_element_event_observers(
             trigger.asset_id(),
             &element,
             &mut registry,
-            &mut video_commands,
-            scale_decals_listener::<DecalMaterial2>,
+            trigger.target(),
         );
 
         element.set_cross_origin(Some("anonymous"));
