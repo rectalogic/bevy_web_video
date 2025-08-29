@@ -1,2 +1,6 @@
 [build]
 target = "wasm32-unknown-unknown"
+
+[alias]
+# XXX requires https://github.com/rust-lang/cargo/pull/15838
+xtask = "run --target host --manifest-path ./xtask/Cargo.toml --"
