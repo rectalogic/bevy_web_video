@@ -1,7 +1,7 @@
 use crate::VideoElement;
 use bevy::prelude::*;
 use gloo_events::EventListener;
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
+use std::collections::HashMap;
 
 pub mod asset;
 
@@ -10,15 +10,14 @@ pub fn plugin(app: &mut App) {
         .insert_non_send_resource(VideoElementRegistry::new());
 }
 
-#[derive(Clone)]
 pub struct VideoElementRegistry {
-    _nonsend: PhantomData<*mut u8>,
+    elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
 }
 
 impl VideoElementRegistry {
     fn new() -> Self {
         Self {
-            _nonsend: PhantomData,
+            elements: HashMap::default(),
         }
     }
 
@@ -26,7 +25,10 @@ impl VideoElementRegistry {
         &self,
         asset_id: impl Into<AssetId<VideoElement>>,
     ) -> Option<web_sys::HtmlVideoElement> {
-        REGISTRY.with_borrow(|registry| registry.get(&asset_id.into()).map(|e| e.element().clone()))
+        //XXX return a reference
+        self.elements
+            .get(&asset_id.into())
+            .map(|e| e.element().clone())
     }
 
     pub(crate) fn add_event_listener(
@@ -34,25 +36,19 @@ impl VideoElementRegistry {
         asset_id: impl Into<AssetId<VideoElement>>,
         listener: EventListener,
     ) {
-        REGISTRY.with_borrow_mut(|registry| {
-            if let Some(registered_element) = registry.get_mut(&asset_id.into()) {
-                registered_element.listeners.push(listener);
-            }
-        });
+        if let Some(registered_element) = self.elements.get_mut(&asset_id.into()) {
+            registered_element.listeners.push(listener);
+        }
     }
 
     fn insert(&mut self, asset_id: AssetId<VideoElement>, element: web_sys::HtmlVideoElement) {
-        REGISTRY
-            .with_borrow_mut(|registry| registry.insert(asset_id, RegisteredElement::new(element)));
+        self.elements
+            .insert(asset_id, RegisteredElement::new(element));
     }
 
     fn remove(&mut self, asset_id: impl Into<AssetId<VideoElement>>) -> Option<RegisteredElement> {
-        REGISTRY.with_borrow_mut(|registry| registry.remove(&asset_id.into()))
+        self.elements.remove(&asset_id.into())
     }
-}
-
-thread_local! {
-    static REGISTRY: RefCell<HashMap<AssetId<VideoElement>, RegisteredElement>> =  RefCell::new(HashMap::default());
 }
 
 #[derive(Debug)]

@@ -1246,6 +1246,7 @@ name = "bevy_web_video"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "console_error_panic_hook",
  "crossbeam-channel",
  "gloo-events",
  "js-sys",
@@ -3770,6 +3771,17 @@ name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+
+[[package]]
+name = "simple"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "bevy_web_video",
+ "console_error_panic_hook",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "skrifa"

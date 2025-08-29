@@ -1,5 +1,5 @@
 [workspace]
-members = ["examples/cubes"]
+members = ["examples/cubes", "examples/simple"]
 
 [workspace.package]
 version = "0.2.0"
@@ -46,6 +46,10 @@ web-sys = { workspace = true }
 # Keep in sync with bevy
 # https://github.com/bevyengine/bevy/issues/11079
 wgpu-types = "24.0.0"
+
+[dev-dependencies]
+bevy = { workspace = true, default-features = true }
+console_error_panic_hook = "0.1.7"
 
 [profile.release]
 opt-level = "s"
