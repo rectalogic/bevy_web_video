@@ -2,14 +2,13 @@
 members = ["examples/cubes", "examples/simple"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [workspace.dependencies]
 bevy = { version = "0.16.1", default-features = false, features = [
     "bevy_core_pipeline",
     "bevy_log",
-    "webgl2",
 ] }
 wasm-bindgen = "0.2.100"
 web-sys = { version = "0.3.77", features = [
@@ -18,10 +17,6 @@ web-sys = { version = "0.3.77", features = [
     "Window",
     "HtmlVideoElement",
     "HtmlMediaElement",
-    "TextTrack",
-    "TextTrackCueList",
-    "TextTrackKind",
-    "VttCue",
 ] }
 
 [package]

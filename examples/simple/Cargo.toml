@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bevy_web_video = { path = "../.." }
-bevy = { workspace = true, default-features = true }
+bevy = { workspace = true, features = ["webgl2"], default-features = true }
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true }
 console_error_panic_hook = "0.1.7"

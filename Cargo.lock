@@ -1243,7 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_web_video"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bevy",
  "console_error_panic_hook",
@@ -1788,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "cubes"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bevy",
  "bevy_web_video",
@@ -3774,7 +3774,7 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "simple"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bevy",
  "bevy_web_video",
