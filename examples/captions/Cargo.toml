@@ -11,5 +11,11 @@ crate-type = ["cdylib", "rlib"]
 bevy_web_video = { path = "../.." }
 bevy = { workspace = true, features = ["webgl2"], default-features = true }
 wasm-bindgen = { workspace = true }
-web-sys = { workspace = true, features = ["HtmlTrackElement"] }
+web-sys = { workspace = true, features = [
+    "HtmlTrackElement",
+    "TextTrack",
+    "TextTrackList",
+    "TextTrackCueList",
+    "VttCue",
+] }
 console_error_panic_hook = "0.1.7"

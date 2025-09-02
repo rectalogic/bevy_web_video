@@ -117,7 +117,7 @@ pub mod events {
             #[derive(Event, Copy, Clone, Debug)]
             pub struct $name;
 
-            impl EventType for $name {
+            impl $crate::EventType for $name {
                 const EVENT_NAME: &'static str = $event_name;
             }
         };
