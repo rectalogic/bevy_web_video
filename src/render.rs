@@ -44,7 +44,7 @@ fn extract_elements(
         if video_element.is_renderable()
             && let Some(element) = registry.element(asset_id)
         {
-            render_elements.insert(asset_id, element);
+            render_elements.insert(asset_id, element.clone());
         }
     }
 }

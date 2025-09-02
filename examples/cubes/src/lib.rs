@@ -151,6 +151,7 @@ fn video1_created_observer(
     mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
     if let Some(element) = registry.element(trigger.asset_id()) {
+        let element = element.clone();
         commands
             .entity(trigger.target())
             .observe(scale_spincube_listener)
@@ -182,6 +183,7 @@ fn video2_created_observer(
     mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
     if let Some(element) = registry.element(trigger.asset_id()) {
+        let element = element.clone();
         commands
             .entity(trigger.target())
             .observe(scale_decals_listener::<DecalMaterial2>);

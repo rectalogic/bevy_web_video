@@ -2,6 +2,7 @@ use crate::VideoElement;
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::collections::HashMap;
+use wasm_bindgen::UnwrapThrowExt;
 
 pub mod asset;
 
@@ -12,23 +13,29 @@ pub fn plugin(app: &mut App) {
 
 pub struct VideoElementRegistry {
     elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
+    document: web_sys::Document,
 }
 
 impl VideoElementRegistry {
     fn new() -> Self {
         Self {
             elements: HashMap::default(),
+            document: web_sys::window()
+                .expect_throw("window")
+                .document()
+                .expect_throw("document"),
         }
     }
 
     pub fn element(
         &self,
         asset_id: impl Into<AssetId<VideoElement>>,
-    ) -> Option<web_sys::HtmlVideoElement> {
-        //XXX return a reference
-        self.elements
-            .get(&asset_id.into())
-            .map(|e| e.element().clone())
+    ) -> Option<&web_sys::HtmlVideoElement> {
+        self.elements.get(&asset_id.into()).map(|e| e.element())
+    }
+
+    pub fn document(&self) -> &web_sys::Document {
+        &self.document
     }
 
     pub(crate) fn add_event_listener(

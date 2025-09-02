@@ -88,10 +88,8 @@ fn asset_events(
                 registry.remove(asset_id);
             }
             AssetEvent::Added { id: asset_id } => {
-                let html_video_element = web_sys::window()
-                    .expect_throw("window")
+                let html_video_element = registry
                     .document()
-                    .expect_throw("document")
                     .create_element("video")
                     .inspect_err(|e| warn!("{e:?}"))
                     .unwrap_throw()
@@ -174,7 +172,7 @@ fn on_loadedmetadata(
     if let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
-        resize_image(video_element, &element, &mut images);
+        resize_image(video_element, element, &mut images);
     };
 }
 
@@ -188,7 +186,7 @@ fn on_resize(
     if let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
-        resize_image(video_element, &element, &mut images);
+        resize_image(video_element, element, &mut images);
     };
 }
 
