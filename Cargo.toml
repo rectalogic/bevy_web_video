@@ -1,5 +1,5 @@
 [workspace]
-members = ["examples/cubes", "examples/simple"]
+members = [ "examples/captions","examples/cubes", "examples/simple"]
 
 [workspace.package]
 version = "0.3.0"

@@ -1494,6 +1494,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "captions"
+version = "0.3.0"
+dependencies = [
+ "bevy",
+ "bevy_web_video",
+ "console_error_panic_hook",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
