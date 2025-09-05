@@ -33,6 +33,9 @@ jobs:
           mkdir -p examples/web/cubes
           cp examples/cubes/index.html examples/web/cubes
           wasm-pack build --target web examples/cubes --out-dir ../web/cubes/pkg
+          mkdir -p examples/web/captions
+          cp examples/captions/index.html examples/web/captions
+          wasm-pack build --target web examples/captions --out-dir ../web/captions/pkg
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
