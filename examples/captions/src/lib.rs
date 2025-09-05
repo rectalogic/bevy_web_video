@@ -1,7 +1,7 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    asset::RenderAssetUsages,
+    asset::{AsAssetId, RenderAssetUsages},
     color::palettes::css::GOLD,
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
@@ -29,7 +29,8 @@ pub fn main() {
         WebVideoPlugin,
     ))
     .add_listener_event::<CueChange>()
-    .add_systems(Startup, setup);
+    .add_systems(Startup, setup)
+    .add_systems(Update, toggle_mute);
 
     app.run();
 }
@@ -205,5 +206,17 @@ fn cuechange_observer(
         && let Some(cue) = cues.get(0)
     {
         text.0 = cue.text();
+    }
+}
+
+fn toggle_mute(
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    video: Single<&WebVideo>,
+    registry: NonSend<VideoElementRegistry>,
+) {
+    if mouse_button.just_pressed(MouseButton::Left)
+        && let Some(element) = registry.element(video.as_asset_id())
+    {
+        element.set_muted(!element.muted());
     }
 }
