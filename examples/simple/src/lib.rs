@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EventWithAssetId, VideoElement, VideoElementCreated, VideoElementRegistry, WebVideo,
-    WebVideoError, WebVideoPlugin,
+    VideoElement, VideoElementAssetsExt, VideoElementRegistry, WebVideo, WebVideoError,
+    WebVideoPlugin,
 };
 use wasm_bindgen::prelude::*;
 
@@ -28,30 +28,19 @@ fn setup(
     mut commands: Commands,
     images: Res<Assets<Image>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
-) {
-    let image = images.reserve_handle();
-    let video_element = video_elements.add(VideoElement::new(&image));
-
-    commands
-        .spawn(WebVideo::new(video_element))
-        .observe(observe_video_created);
-    commands.spawn(Sprite::from_image(image));
-    commands.spawn(Camera2d);
-}
-
-fn observe_video_created(
-    trigger: Trigger<VideoElementCreated>,
-    registry: NonSend<VideoElementRegistry>,
+    mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
-    let asset_id = trigger.asset_id();
-    if let Some(element) = registry.element(asset_id) {
-        element.set_cross_origin(Some("anonymous"));
-        element.set_src(
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        );
-        element.set_muted(true);
-        element.set_loop(true);
-        let _ = element.play().map_err(WebVideoError::from)?;
-    }
+    let image_handle = images.reserve_handle();
+    let (video_element_handle, element) = video_elements.new_video(&image_handle, &mut registry);
+    element.set_cross_origin(Some("anonymous"));
+    element.set_src(
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    );
+    element.set_muted(true);
+    element.set_loop(true);
+    let _ = element.play().map_err(WebVideoError::from)?;
+    commands.spawn(WebVideo::new(video_element_handle));
+    commands.spawn(Sprite::from_image(image_handle));
+    commands.spawn(Camera2d);
     Ok(())
 }

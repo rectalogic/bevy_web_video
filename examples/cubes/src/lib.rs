@@ -6,8 +6,8 @@ use bevy::{
 };
 use bevy::{prelude::*, window::WindowResolution};
 use bevy_web_video::{
-    EventSender, EventWithAssetId, ListenerEvent, VideoElement, VideoElementCreated,
-    VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
+    EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt, VideoElementRegistry,
+    WebVideo, WebVideoError, WebVideoPlugin, events,
 };
 use wasm_bindgen::prelude::*;
 
@@ -43,6 +43,7 @@ struct DecalMaterial1;
 #[derive(Component)]
 struct DecalMaterial2;
 
+#[allow(clippy::too_many_arguments)]
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -50,13 +51,31 @@ fn setup(
     mut decal_materials: ResMut<Assets<ForwardDecalMaterial<StandardMaterial>>>,
     images: Res<Assets<Image>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
+    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
+    mut registry: NonSendMut<VideoElementRegistry>,
 ) -> Result<()> {
     let image_handle1 = images.reserve_handle();
-    let video_element_handle1 = video_elements.add(VideoElement::new(&image_handle1));
+    let (video_element_handle1, element1) = video_elements.new_video(&image_handle1, &mut registry);
+    let video_element_id1 = video_element_handle1.id();
+    let video_entity1 = commands.spawn(WebVideo::new(video_element_handle1)).id();
 
     commands
-        .spawn(WebVideo::new(video_element_handle1))
-        .observe(video1_created_observer);
+        .entity(video_entity1)
+        .observe(scale_spincube_listener)
+        .observe(scale_decals_listener::<DecalMaterial1>);
+
+    loadedmetadata_event_sender.enable_element_event_observers(
+        video_element_id1,
+        &element1,
+        &mut registry,
+        video_entity1,
+    );
+
+    element1.set_cross_origin(Some("anonymous"));
+    element1.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
+    element1.set_muted(true);
+    element1.set_loop(true);
+    let _ = element1.play().map_err(WebVideoError::from)?;
 
     commands.spawn((
         SpinCube,
@@ -69,11 +88,28 @@ fn setup(
     ));
 
     let image_handle2 = images.reserve_handle();
-    let video_element_handle2 = video_elements.add(VideoElement::new(&image_handle2));
+    let (video_element_handle2, element2) = video_elements.new_video(&image_handle2, &mut registry);
+    let video_element_id2 = video_element_handle2.id();
+
+    let video_entity2 = commands.spawn(WebVideo::new(video_element_handle2)).id();
 
     commands
-        .spawn(WebVideo::new(video_element_handle2))
-        .observe(video2_created_observer);
+        .entity(video_entity2)
+        .observe(scale_decals_listener::<DecalMaterial2>);
+    loadedmetadata_event_sender.enable_element_event_observers(
+        video_element_id2,
+        &element2,
+        &mut registry,
+        video_entity2,
+    );
+
+    element2.set_cross_origin(Some("anonymous"));
+    element2.set_src(
+        "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4",
+    );
+    element2.set_muted(true);
+    element2.set_loop(true);
+    let _ = element2.play().map_err(WebVideoError::from)?;
 
     let decal_material1 = decal_materials.add(new_decal_material(image_handle1));
     let decal_material2 = decal_materials.add(new_decal_material(image_handle2));
@@ -142,69 +178,6 @@ fn setup(
         Transform::from_xyz(0., 0., 3.5),
     ));
     Ok(())
-}
-
-fn video1_created_observer(
-    trigger: Trigger<VideoElementCreated>,
-    mut commands: Commands,
-    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
-    mut registry: NonSendMut<VideoElementRegistry>,
-) -> Result<()> {
-    if let Some(element) = registry.element(trigger.asset_id()) {
-        let element = element.clone();
-        commands
-            .entity(trigger.target())
-            .observe(scale_spincube_listener)
-            .observe(scale_decals_listener::<DecalMaterial1>);
-
-        loadedmetadata_event_sender.enable_element_event_observers(
-            trigger.asset_id(),
-            &element,
-            &mut registry,
-            trigger.target(),
-        );
-
-        element.set_cross_origin(Some("anonymous"));
-        element.set_src("https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/bbb_sunflower_1080p_30fps_normal_10min.mp4");
-        element.set_muted(true);
-        element.set_loop(true);
-        let _ = element.play().map_err(WebVideoError::from)?;
-
-        Ok(())
-    } else {
-        Err("missing video".into())
-    }
-}
-
-fn video2_created_observer(
-    trigger: Trigger<VideoElementCreated>,
-    mut commands: Commands,
-    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
-    mut registry: NonSendMut<VideoElementRegistry>,
-) -> Result<()> {
-    if let Some(element) = registry.element(trigger.asset_id()) {
-        let element = element.clone();
-        commands
-            .entity(trigger.target())
-            .observe(scale_decals_listener::<DecalMaterial2>);
-        loadedmetadata_event_sender.enable_element_event_observers(
-            trigger.asset_id(),
-            &element,
-            &mut registry,
-            trigger.target(),
-        );
-
-        element.set_cross_origin(Some("anonymous"));
-        element.set_src(
-            "https://cdn.glitch.me/364f8e5a-f12f-4f82-a386-20e6be6b1046/elephants_dream_1280x720.mp4"
-        );
-        element.set_muted(true);
-        element.set_loop(true);
-        let _ = element.play().map_err(WebVideoError::from)?;
-        Ok(())
-    } else {
-        Err("missing video".into())
-    }
 }
 
 fn scale_spincube_listener(

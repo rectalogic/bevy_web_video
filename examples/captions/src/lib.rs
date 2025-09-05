@@ -8,9 +8,8 @@ use bevy::{
     window::WindowResolution,
 };
 use bevy_web_video::{
-    EventListenerAppExt, EventSender, EventWithAssetId, ListenerEvent, VideoElement,
-    VideoElementCreated, VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events,
-    new_event_type,
+    EventListenerAppExt, EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt,
+    VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events, new_event_type,
 };
 use wasm_bindgen::prelude::*;
 
@@ -43,19 +42,60 @@ struct Video;
 #[derive(Component)]
 struct Caption;
 
+#[allow(clippy::too_many_arguments)]
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
-) {
+    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
+    cuechange_event_sender: Res<EventSender<CueChange>>,
+    mut registry: NonSendMut<VideoElementRegistry>,
+) -> Result<()> {
     let video_image = images.reserve_handle();
-    let video_element = video_elements.add(VideoElement::new(&video_image));
+    let (video_element_handle, element) = video_elements.new_video(&video_image, &mut registry);
+    let video_asset_id = video_element_handle.id();
+    let video_entity = commands.spawn(WebVideo::new(video_element_handle)).id();
+
+    element.set_cross_origin(Some("anonymous"));
+    element.set_src("https://thepaciellogroup.github.io/AT-browser-tests/video/ElephantsDream.mp4");
+    element.set_muted(true); // User must click to unmute
+    element.set_loop(true);
+
+    let track = registry
+        .document()
+        .create_element("track")
+        .inspect_err(|e| warn!("{e:?}"))
+        .unwrap_throw()
+        .dyn_into::<web_sys::HtmlTrackElement>()
+        .inspect_err(|e| warn!("{e:?}"))
+        .expect_throw("web_sys::HtmlTrackElement");
+    track.set_kind("subtitles");
+    track.set_srclang("en");
+    track.set_src("https://thepaciellogroup.github.io/AT-browser-tests/video/subtitles-en.vtt");
+    track.set_default(true);
+    element.append_child(&track).map_err(WebVideoError::from)?;
 
     commands
-        .spawn(WebVideo::new(video_element))
-        .observe(video_created_observer);
+        .entity(video_entity)
+        .observe(loadedmetadata_observer);
+    loadedmetadata_event_sender.enable_element_event_observers(
+        video_asset_id,
+        &element,
+        &mut registry,
+        video_entity,
+    );
+
+    commands.entity(video_entity).observe(cuechange_observer);
+    cuechange_event_sender.enable_element_event_observers(
+        video_asset_id,
+        &track,
+        &mut registry,
+        video_entity,
+    );
+
+    let _ = element.play().map_err(WebVideoError::from)?;
 
     commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 0.0, 3.0)));
 
@@ -122,60 +162,6 @@ fn setup(
             .with_translation(Vec3::new(0.6, 0.0, 0.0)),
     ));
     commands.spawn(DirectionalLight::default());
-}
-
-fn video_created_observer(
-    trigger: Trigger<VideoElementCreated>,
-    mut commands: Commands,
-    loadedmetadata_event_sender: Res<EventSender<events::LoadedMetadata>>,
-    cuechange_event_sender: Res<EventSender<CueChange>>,
-    mut registry: NonSendMut<VideoElementRegistry>,
-) -> Result<()> {
-    let Some(element) = registry.element(trigger.asset_id()) else {
-        return Err("missing video".into());
-    };
-    let element = element.clone();
-
-    element.set_cross_origin(Some("anonymous"));
-    element.set_src("https://thepaciellogroup.github.io/AT-browser-tests/video/ElephantsDream.mp4");
-    element.set_muted(true); //XXX how can we unmute?
-    element.set_loop(true);
-
-    let track = registry
-        .document()
-        .create_element("track")
-        .inspect_err(|e| warn!("{e:?}"))
-        .unwrap_throw()
-        .dyn_into::<web_sys::HtmlTrackElement>()
-        .inspect_err(|e| warn!("{e:?}"))
-        .expect_throw("web_sys::HtmlTrackElement");
-    track.set_kind("subtitles");
-    track.set_srclang("en");
-    track.set_src("https://thepaciellogroup.github.io/AT-browser-tests/video/subtitles-en.vtt");
-    track.set_default(true);
-    element.append_child(&track).map_err(WebVideoError::from)?;
-
-    commands
-        .entity(trigger.target())
-        .observe(loadedmetadata_observer);
-    loadedmetadata_event_sender.enable_element_event_observers(
-        trigger.asset_id(),
-        &element,
-        &mut registry,
-        trigger.target(),
-    );
-
-    commands
-        .entity(trigger.target())
-        .observe(cuechange_observer);
-    cuechange_event_sender.enable_element_event_observers(
-        trigger.asset_id(),
-        &track,
-        &mut registry,
-        trigger.target(),
-    );
-
-    let _ = element.play().map_err(WebVideoError::from)?;
 
     Ok(())
 }

@@ -6,10 +6,10 @@ mod registry;
 pub(crate) mod render;
 
 pub use crate::{
-    event::{EventListenerAppExt, EventSender, EventType, EventWithAssetId, ListenerEvent, events},
+    event::{EventListenerAppExt, EventSender, EventType, ListenerEvent, events},
     registry::{
         VideoElementRegistry,
-        asset::{VideoElement, VideoElementCreated},
+        asset::{VideoElement, VideoElementAssetsExt},
     },
 };
 
@@ -17,7 +17,8 @@ pub struct WebVideoPlugin;
 
 impl Plugin for WebVideoPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((registry::plugin, event::plugin, render::VideoRenderPlugin));
+        // event must be built before registry
+        app.add_plugins((event::plugin, registry::plugin, render::VideoRenderPlugin));
     }
 }
 

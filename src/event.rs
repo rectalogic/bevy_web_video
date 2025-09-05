@@ -40,35 +40,20 @@ impl<E: EventType> EventSender<E> {
         registry: &mut VideoElementRegistry,
         target: Entity,
     ) -> &Self {
-        self.add_listener(asset_id, element, registry, Some(target));
-        self
-    }
-
-    pub(crate) fn add_video_event_listener_internal(
-        &self,
-        asset_id: impl Into<AssetId<VideoElement>>,
-        element: &web_sys::EventTarget,
-        registry: &mut VideoElementRegistry,
-    ) {
-        self.add_listener(asset_id, element, registry, None);
-    }
-
-    fn add_listener(
-        &self,
-        asset_id: impl Into<AssetId<VideoElement>>,
-        element: &web_sys::EventTarget,
-        registry: &mut VideoElementRegistry,
-        target: Option<Entity>,
-    ) {
         let tx = self.0.clone();
         let asset_id = asset_id.into();
         let listener =
             EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
-                if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, target)) {
+                if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, Some(target))) {
                     warn!("Failed to fire video event {}: {err:?}", E::EVENT_NAME);
                 };
             });
         registry.add_event_listener(asset_id, listener);
+        self
+    }
+
+    pub(crate) fn tx(&self) -> crossbeam_channel::Sender<ListenerEvent<E>> {
+        self.0.clone()
     }
 }
 
@@ -90,16 +75,8 @@ impl<E: EventType> ListenerEvent<E> {
             _phantom: PhantomData,
         }
     }
-}
 
-pub trait EventWithAssetId: Event {
-    type Asset: Asset;
-    fn asset_id(&self) -> AssetId<Self::Asset>;
-}
-
-impl<E: EventType> EventWithAssetId for ListenerEvent<E> {
-    type Asset = VideoElement;
-    fn asset_id(&self) -> AssetId<VideoElement> {
+    pub fn asset_id(&self) -> AssetId<VideoElement> {
         self.asset_id
     }
 }
