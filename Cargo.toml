@@ -1,5 +1,5 @@
 [workspace]
-members = [ "examples/captions", "examples/cubes", "examples/simple"]
+members = [ "examples/captions", "examples/cubes", "examples/simple", "examples/skyvid"]
 
 [workspace.package]
 version = "0.5.0"
@@ -18,6 +18,7 @@ web-sys = { version = "0.3.77", features = [
     "HtmlVideoElement",
     "HtmlMediaElement",
 ] }
+crossbeam-channel = "0.5.15"
 
 [package]
 name = "bevy_web_video"
@@ -32,7 +33,7 @@ webgpu = ["bevy/webgpu"]
 
 [dependencies]
 bevy = { workspace = true }
-crossbeam-channel = "0.5.15"
+crossbeam-channel = { workspace = true }
 gloo-events = "0.2.0"
 js-sys = "0.3.77"
 wasm-bindgen = { workspace = true }
@@ -41,10 +42,6 @@ web-sys = { workspace = true }
 # Keep in sync with bevy
 # https://github.com/bevyengine/bevy/issues/11079
 wgpu-types = "24.0.0"
-
-[dev-dependencies]
-bevy = { workspace = true, default-features = true }
-console_error_panic_hook = "0.1.7"
 
 [profile.release]
 opt-level = "s"

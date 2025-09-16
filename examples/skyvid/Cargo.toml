@@ -1,0 +1,15 @@
+[package]
+name = "skyvid"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bevy_web_video = { path = "../.." }
+bevy = { workspace = true, features = ["webgl2"], default-features = true }
+wasm-bindgen = { workspace = true }
+web-sys = { workspace = true }
+console_error_panic_hook = "0.1.7"
+atrium-api = "0.25.5"
+atrium-xrpc-client = "0.5.14"
+async-channel = "2.5.0"
