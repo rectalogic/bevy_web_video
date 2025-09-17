@@ -12,9 +12,11 @@ use wasm_bindgen::prelude::*;
 pub fn plugin(app: &mut App) {
     app.init_asset::<VideoElement>()
         .add_observer(on_loadedmetadata)
+        .add_observer(on_canplay)
         .add_observer(on_resize)
         .add_observer(on_error)
         .add_observer(on_playing)
+        .add_observer(on_ended)
         .add_systems(Update, mark_assets_modified)
         .add_systems(PostUpdate, remove_unused_assets.after(AssetEvents));
 }
@@ -100,10 +102,15 @@ fn resize_image(
     element: &web_sys::HtmlVideoElement,
     images: &mut Assets<Image>,
 ) {
+    let width = element.video_width();
+    let height = element.video_height();
+    if width == 0 || height == 0 {
+        return;
+    }
     let mut image = Image::new_uninit(
         Extent3d {
-            width: element.video_width(),
-            height: element.video_height(),
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -116,6 +123,20 @@ fn resize_image(
 
 fn on_loadedmetadata(
     trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    video_elements: Res<Assets<VideoElement>>,
+    mut images: ResMut<Assets<Image>>,
+    registry: NonSend<VideoElementRegistry>,
+) {
+    let asset_id = trigger.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
+        && let Some(element) = registry.element(asset_id)
+    {
+        resize_image(video_element, element, &mut images);
+    };
+}
+
+fn on_canplay(
+    trigger: Trigger<ListenerEvent<events::CanPlay>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
     registry: NonSend<VideoElementRegistry>,
@@ -156,8 +177,16 @@ fn on_playing(
     trigger: Trigger<ListenerEvent<events::Playing>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    let Some(video_element) = video_elements.get_mut(trigger.asset_id()) else {
-        return;
+    if let Some(video_element) = video_elements.get_mut(trigger.asset_id()) {
+        video_element.renderable = true;
     };
-    video_element.renderable = true;
+}
+
+fn on_ended(
+    trigger: Trigger<ListenerEvent<events::Ended>>,
+    mut video_elements: ResMut<Assets<VideoElement>>,
+) {
+    if let Some(video_element) = video_elements.get_mut(trigger.asset_id()) {
+        video_element.renderable = false;
+    };
 }

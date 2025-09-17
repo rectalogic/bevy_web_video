@@ -6,8 +6,10 @@ use std::marker::PhantomData;
 
 pub fn plugin(app: &mut App) {
     app.add_listener_event::<events::LoadedMetadata>()
+        .add_listener_event::<events::CanPlay>()
         .add_listener_event::<events::Resize>()
         .add_listener_event::<events::Playing>()
+        .add_listener_event::<events::Ended>()
         .add_listener_event::<events::Error>();
 }
 
@@ -101,8 +103,10 @@ pub mod events {
     }
 
     new_event_type!(LoadedMetadata, "loadedmetadata");
+    new_event_type!(CanPlay, "canplay");
     new_event_type!(Resize, "resize");
     new_event_type!(Playing, "playing");
+    new_event_type!(Ended, "ended");
     new_event_type!(Error, "error");
 }
 

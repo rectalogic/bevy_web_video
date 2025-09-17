@@ -6,19 +6,17 @@ use atrium_xrpc_client::reqwest::ReqwestClient;
 use bevy::{asset::AsAssetId, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool};
 use bevy_web_video::{
     EventListenerAppExt, EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt,
-    VideoElementRegistry, WebVideo, WebVideoError, new_event_type,
+    VideoElementRegistry, WebVideo, WebVideoError, events, new_event_type,
 };
 
 const DISTANCE: f32 = 5.0;
 
 pub fn plugin(app: &mut App) {
-    app.add_listener_event::<Ended>()
-        .add_listener_event::<TimeUpdate>()
+    app.add_listener_event::<TimeUpdate>()
         .add_systems(Startup, setup)
         .add_systems(Update, update);
 }
 
-new_event_type!(Ended, "ended");
 new_event_type!(TimeUpdate, "timeupdate");
 
 #[derive(Debug)]
@@ -40,7 +38,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     images: Res<Assets<Image>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
-    ended_event_sender: Res<EventSender<Ended>>,
+    ended_event_sender: Res<EventSender<events::Ended>>,
     timeupdate_event_sender: Res<EventSender<TimeUpdate>>,
     mut registry: NonSendMut<VideoElementRegistry>,
 ) {
@@ -137,7 +135,7 @@ async fn send_videos(tx: async_channel::Sender<Video>) {
     }
 }
 
-fn ended_observer(trigger: Trigger<ListenerEvent<Ended>>, mut commands: Commands) {
+fn ended_observer(trigger: Trigger<ListenerEvent<events::Ended>>, mut commands: Commands) {
     commands.entity(trigger.target()).insert(Disabled);
 }
 
@@ -172,7 +170,7 @@ fn update(
             );
             element.set_src(&video.url);
             let _ = element.play().map_err(WebVideoError::from)?;
-            commands.entity(entity).remove::<Disabled>();
+            commands.entity(entity).remove::<Disabled>(); //XXX defer this to playing event?
         }
     }
     Ok(())
