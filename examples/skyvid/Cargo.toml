@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 bevy_web_video = { path = "../.." }
 bevy = { workspace = true, features = ["webgl2"], default-features = true }
