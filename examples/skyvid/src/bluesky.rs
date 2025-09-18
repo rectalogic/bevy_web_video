@@ -170,7 +170,22 @@ fn update(
             );
             element.set_src(&video.url);
             let _ = element.play().map_err(WebVideoError::from)?;
+
             commands.entity(entity).remove::<Disabled>(); //XXX defer this to playing event?
+            // Workaround broken Bevy Disabled handling https://github.com/bevyengine/bevy/issues/18981
+            commands.queue(move |world: &mut World| -> Result<()> {
+                let component_ids: Vec<_> = world
+                    .inspect_entity(entity)?
+                    .map(|component_info| component_info.id())
+                    .collect();
+                let mut entity_mut = world.entity_mut(entity);
+                for component_id in component_ids {
+                    if let Ok(mut component) = entity_mut.get_mut_by_id(component_id) {
+                        component.set_changed();
+                    }
+                }
+                Ok(())
+            });
         }
     }
     Ok(())
