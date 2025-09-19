@@ -62,7 +62,7 @@ impl<E: EventType> EventSender<E> {
 #[derive(Resource)]
 struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
 
-#[derive(Event, Clone)]
+#[derive(Event, Clone, Debug)]
 pub struct ListenerEvent<E: EventType> {
     asset_id: AssetId<VideoElement>,
     target: Option<Entity>,

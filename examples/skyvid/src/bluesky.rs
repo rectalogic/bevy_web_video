@@ -164,8 +164,8 @@ fn update(
         {
             transform.translation = initial_position.0;
             transform.scale = Vec3::new(
-                video.aspect_ratio.max(1.0),
                 video.aspect_ratio.min(1.0),
+                (1.0 / video.aspect_ratio).min(1.0),
                 1.0,
             );
             element.set_src(&video.url);

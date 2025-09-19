@@ -128,7 +128,8 @@ fn on_loadedmetadata(
     registry: NonSend<VideoElementRegistry>,
 ) {
     let asset_id = trigger.asset_id();
-    if let Some(video_element) = video_elements.get(asset_id)
+    if trigger.target() == Entity::PLACEHOLDER
+        && let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -142,7 +143,8 @@ fn on_canplay(
     registry: NonSend<VideoElementRegistry>,
 ) {
     let asset_id = trigger.asset_id();
-    if let Some(video_element) = video_elements.get(asset_id)
+    if trigger.target() == Entity::PLACEHOLDER
+        && let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -156,7 +158,8 @@ fn on_resize(
     registry: NonSend<VideoElementRegistry>,
 ) {
     let asset_id = trigger.asset_id();
-    if let Some(video_element) = video_elements.get(asset_id)
+    if trigger.target() == Entity::PLACEHOLDER
+        && let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -168,7 +171,7 @@ fn on_error(
     video_elements: Res<Assets<VideoElement>>,
 ) {
     let asset_id = trigger.asset_id();
-    if video_elements.get(asset_id).is_none() {
+    if trigger.target() == Entity::PLACEHOLDER && video_elements.get(asset_id).is_none() {
         warn!("Video asset {:?} failed to load with error", asset_id);
     };
 }
@@ -177,7 +180,9 @@ fn on_playing(
     trigger: Trigger<ListenerEvent<events::Playing>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    if let Some(video_element) = video_elements.get_mut(trigger.asset_id()) {
+    if trigger.target() == Entity::PLACEHOLDER
+        && let Some(video_element) = video_elements.get_mut(trigger.asset_id())
+    {
         video_element.renderable = true;
     };
 }
@@ -186,7 +191,9 @@ fn on_ended(
     trigger: Trigger<ListenerEvent<events::Ended>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    if let Some(video_element) = video_elements.get_mut(trigger.asset_id()) {
+    if trigger.target() == Entity::PLACEHOLDER
+        && let Some(video_element) = video_elements.get_mut(trigger.asset_id())
+    {
         video_element.renderable = false;
     };
 }

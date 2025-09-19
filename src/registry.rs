@@ -14,6 +14,10 @@ pub fn plugin(app: &mut App) {
         .get_resource::<EventSender<events::LoadedMetadata>>()
         .expect("EventSender<LoadedMetadata>")
         .tx();
+    let tx_canplay = world
+        .get_resource::<EventSender<events::CanPlay>>()
+        .expect("EventSender<CanPlay>")
+        .tx();
     let tx_resize = world
         .get_resource::<EventSender<events::Resize>>()
         .expect("EventSender<Resize>")
@@ -22,6 +26,10 @@ pub fn plugin(app: &mut App) {
         .get_resource::<EventSender<events::Playing>>()
         .expect("EventSender<Playing>")
         .tx();
+    let tx_ended = world
+        .get_resource::<EventSender<events::Ended>>()
+        .expect("EventSender<Ended>")
+        .tx();
     let tx_error = world
         .get_resource::<EventSender<events::Error>>()
         .expect("EventSender<Error>")
@@ -29,8 +37,10 @@ pub fn plugin(app: &mut App) {
 
     app.insert_non_send_resource(VideoElementRegistry::new(
         tx_loadedmetadata,
+        tx_canplay,
         tx_resize,
         tx_playing,
+        tx_ended,
         tx_error,
     ));
 }
@@ -39,16 +49,20 @@ pub struct VideoElementRegistry {
     elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
     document: web_sys::Document,
     tx_loadedmetadata: crossbeam_channel::Sender<ListenerEvent<events::LoadedMetadata>>,
+    tx_canplay: crossbeam_channel::Sender<ListenerEvent<events::CanPlay>>,
     tx_resize: crossbeam_channel::Sender<ListenerEvent<events::Resize>>,
     tx_playing: crossbeam_channel::Sender<ListenerEvent<events::Playing>>,
+    tx_ended: crossbeam_channel::Sender<ListenerEvent<events::Ended>>,
     tx_error: crossbeam_channel::Sender<ListenerEvent<events::Error>>,
 }
 
 impl VideoElementRegistry {
     fn new(
         tx_loadedmetadata: crossbeam_channel::Sender<ListenerEvent<events::LoadedMetadata>>,
+        tx_canplay: crossbeam_channel::Sender<ListenerEvent<events::CanPlay>>,
         tx_resize: crossbeam_channel::Sender<ListenerEvent<events::Resize>>,
         tx_playing: crossbeam_channel::Sender<ListenerEvent<events::Playing>>,
+        tx_ended: crossbeam_channel::Sender<ListenerEvent<events::Ended>>,
         tx_error: crossbeam_channel::Sender<ListenerEvent<events::Error>>,
     ) -> Self {
         Self {
@@ -58,8 +72,10 @@ impl VideoElementRegistry {
                 .document()
                 .expect_throw("document"),
             tx_loadedmetadata,
+            tx_canplay,
             tx_resize,
             tx_playing,
+            tx_ended,
             tx_error,
         }
     }
@@ -98,6 +114,13 @@ impl VideoElementRegistry {
         registered_element
             .listeners
             .push(Self::new_internal_listener(
+                self.tx_canplay.clone(),
+                asset_id,
+                &element,
+            ));
+        registered_element
+            .listeners
+            .push(Self::new_internal_listener(
                 self.tx_resize.clone(),
                 asset_id,
                 &element,
@@ -106,6 +129,13 @@ impl VideoElementRegistry {
             .listeners
             .push(Self::new_internal_listener(
                 self.tx_playing.clone(),
+                asset_id,
+                &element,
+            ));
+        registered_element
+            .listeners
+            .push(Self::new_internal_listener(
+                self.tx_ended.clone(),
                 asset_id,
                 &element,
             ));
