@@ -9,7 +9,7 @@ pub fn main() {
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                resolution: WindowResolution::new(700.0, 700.0),
+                resolution: WindowResolution::new(700, 700),
                 ..default()
             }),
             ..default()

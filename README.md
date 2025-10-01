@@ -8,6 +8,6 @@ See [examples/cubes/src/lib.rs](examples/cubes/src/lib.rs) for example use.
 To run the demo locally:
 ```sh-session
 $ cargo install wasm-pack
-$ wasm-pack build --target web examples/cubes --features webgpu
+$ wasm-pack build --target web examples/cubes
 $ python3 -m http.server -d examples/cubes  # now open http://localhost:8000/
 ```

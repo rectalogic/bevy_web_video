@@ -21,14 +21,12 @@ impl Plugin for VideoRenderPlugin {
     fn build(&self, app: &mut App) {
         // Render videos after GpuImage is prepared
         app.add_plugins(RenderAssetPlugin::<RenderVideoElement, GpuImage>::default());
-    }
-
-    fn finish(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .add_systems(ExtractSchedule, extract_elements)
-            .world_mut()
-            .init_non_send_resource::<RenderElements>();
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app
+                .add_systems(ExtractSchedule, extract_elements)
+                .world_mut()
+                .init_non_send_resource::<RenderElements>();
+        }
     }
 }
 
@@ -63,6 +61,7 @@ impl RenderAsset for RenderVideoElement {
         video_element: Self::SourceAsset,
         asset_id: AssetId<Self::SourceAsset>,
         (render_queue, gpu_images, render_elements): &mut SystemParamItem<Self::Param>,
+        _previous_asset: Option<&Self>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         if let Some(gpu_image) = gpu_images.get(video_element.target_image_id())
             && let Some(element) = render_elements.remove(&asset_id)

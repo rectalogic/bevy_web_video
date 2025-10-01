@@ -20,19 +20,18 @@ pub trait EventListenerAppExt {
 impl EventListenerAppExt for App {
     fn add_listener_event<E: EventType>(&mut self) -> &mut Self {
         // Check if already initialized
-        if self.world().contains_resource::<Events<ListenerEvent<E>>>() {
+        if self.world().contains_resource::<EventSender<E>>() {
             return self;
         }
         let (tx, rx) = unbounded();
-        self.add_event::<ListenerEvent<E>>()
-            .insert_resource(EventSender::<E>(tx))
+        self.insert_resource(EventSender::<E>(tx))
             .insert_resource(EventReceiver::<E>(rx))
             .add_systems(Update, listen_for_events::<E>)
     }
 }
 
 #[derive(Resource)]
-pub struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEvent<E>>);
+pub struct EventSender<E: EventType>(crossbeam_channel::Sender<ListenerEventInternal<E>>);
 
 impl<E: EventType> EventSender<E> {
     pub fn enable_element_event_observers(
@@ -46,7 +45,7 @@ impl<E: EventType> EventSender<E> {
         let asset_id = asset_id.into();
         let listener =
             EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
-                if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, Some(target))) {
+                if let Err(err) = tx.send(ListenerEventInternal::<E>::new(asset_id, Some(target))) {
                     warn!("Failed to fire video event {}: {err:?}", E::EVENT_NAME);
                 };
             });
@@ -54,26 +53,62 @@ impl<E: EventType> EventSender<E> {
         self
     }
 
-    pub(crate) fn tx(&self) -> crossbeam_channel::Sender<ListenerEvent<E>> {
+    pub(crate) fn tx(&self) -> crossbeam_channel::Sender<ListenerEventInternal<E>> {
         self.0.clone()
     }
 }
 
 #[derive(Resource)]
-struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEvent<E>>);
+struct EventReceiver<E: EventType>(crossbeam_channel::Receiver<ListenerEventInternal<E>>);
 
-#[derive(Event, Clone, Debug)]
-pub struct ListenerEvent<E: EventType> {
+#[derive(Clone, Debug)]
+pub(crate) struct ListenerEventInternal<E: EventType> {
     asset_id: AssetId<VideoElement>,
-    target: Option<Entity>,
+    entity: Option<Entity>,
     _phantom: PhantomData<E>,
 }
 
-impl<E: EventType> ListenerEvent<E> {
-    pub(crate) fn new(asset_id: AssetId<VideoElement>, target: Option<Entity>) -> Self {
+#[derive(Event, Clone, Debug)]
+pub struct ListenerAssetEvent<E: EventType> {
+    asset_id: AssetId<VideoElement>,
+    _phantom: PhantomData<E>,
+}
+
+#[derive(EntityEvent, Clone, Debug)]
+pub struct ListenerEvent<E: EventType> {
+    asset_id: AssetId<VideoElement>,
+    pub entity: Entity,
+    _phantom: PhantomData<E>,
+}
+
+impl<E: EventType> ListenerEventInternal<E> {
+    pub(crate) fn new(asset_id: AssetId<VideoElement>, entity: Option<Entity>) -> Self {
         Self {
             asset_id,
-            target,
+            entity,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<E: EventType> ListenerAssetEvent<E> {
+    fn new(asset_id: AssetId<VideoElement>) -> Self {
+        Self {
+            asset_id,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn asset_id(&self) -> AssetId<VideoElement> {
+        self.asset_id
+    }
+}
+
+impl<E: EventType> ListenerEvent<E> {
+    fn new(asset_id: AssetId<VideoElement>, entity: Entity) -> Self {
+        Self {
+            asset_id,
+            entity,
             _phantom: PhantomData,
         }
     }
@@ -112,10 +147,10 @@ pub mod events {
 
 fn listen_for_events<E: EventType>(receiver: Res<EventReceiver<E>>, mut commands: Commands) {
     while let Ok(event) = receiver.0.try_recv() {
-        if let Some(target) = event.target {
-            commands.trigger_targets(event, target);
+        if let Some(entity) = event.entity {
+            commands.trigger(ListenerEvent::<E>::new(event.asset_id, entity));
         } else {
-            commands.trigger(event);
+            commands.trigger(ListenerAssetEvent::<E>::new(event.asset_id));
         }
     }
 }
