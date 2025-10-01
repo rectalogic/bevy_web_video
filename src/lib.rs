@@ -29,6 +29,10 @@ impl WebVideo {
     pub fn new(video_element: Handle<VideoElement>) -> Self {
         Self(video_element)
     }
+
+    pub fn asset_id(&self) -> AssetId<VideoElement> {
+        self.0.id()
+    }
 }
 
 impl AsAssetId for WebVideo {

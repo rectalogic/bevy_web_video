@@ -107,6 +107,17 @@ fn resize_image(
     if width == 0 || height == 0 {
         return;
     }
+    if let Some(image) = images.get_mut(video_element.target_image_id()) {
+        if image.size() != UVec2::new(width, height) {
+            image.texture_descriptor.size = Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            };
+        }
+        return;
+    }
+
     let mut image = Image::new_uninit(
         Extent3d {
             width,
@@ -115,7 +126,7 @@ fn resize_image(
         },
         TextureDimension::D2,
         TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
+        RenderAssetUsages::default(),
     );
     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
     images.insert(video_element.target_image_id(), image);

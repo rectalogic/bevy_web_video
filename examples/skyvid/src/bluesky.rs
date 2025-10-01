@@ -159,7 +159,7 @@ fn update(
     mut commands: Commands,
 ) -> Result<()> {
     for (entity, web_video, mut transform, initial_position) in web_videos.iter_mut() {
-        if let Some(element) = registry.element(web_video.as_asset_id())
+        if let Some(element) = registry.element(web_video.asset_id())
             && let Ok(video) = videos.try_recv()
         {
             transform.translation = initial_position.0;
