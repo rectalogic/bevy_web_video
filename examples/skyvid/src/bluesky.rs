@@ -6,13 +6,14 @@ use atrium_xrpc_client::reqwest::ReqwestClient;
 use bevy::{asset::AssetEvents, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool};
 use bevy_web_video::{
     EventListenerAppExt, EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt,
-    VideoElementRegistry, WebVideo, WebVideoError, events, new_event_type,
+    VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events, new_event_type,
 };
 
 const DISTANCE: f32 = 5.0;
 
 pub fn plugin(app: &mut App) {
-    app.add_listener_event::<TimeUpdate>()
+    app.add_plugins(WebVideoPlugin)
+        .add_listener_event::<TimeUpdate>()
         .add_systems(Startup, setup)
         .add_systems(Update, update)
         .add_systems(PostUpdate, handle_image_resize.after(AssetEvents));
