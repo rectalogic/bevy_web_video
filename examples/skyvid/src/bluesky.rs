@@ -3,7 +3,9 @@ use atrium_api::{
     types::{LimitedNonZeroU8, Union},
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
-use bevy::{asset::AssetEvents, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool};
+use bevy::{
+    asset::AssetEventSystems, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool,
+};
 use bevy_web_video::{
     EventListenerAppExt, EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt,
     VideoElementRegistry, WebVideo, WebVideoError, WebVideoPlugin, events, new_event_type,
@@ -16,7 +18,7 @@ pub fn plugin(app: &mut App) {
         .add_listener_event::<TimeUpdate>()
         .add_systems(Startup, setup)
         .add_systems(Update, update)
-        .add_systems(PostUpdate, handle_image_resize.after(AssetEvents));
+        .add_systems(PostUpdate, handle_image_resize.after(AssetEventSystems));
 }
 
 new_event_type!(TimeUpdate, "timeupdate");
@@ -145,7 +147,7 @@ async fn send_videos(tx: async_channel::Sender<Video>) {
 }
 
 fn handle_image_resize(
-    mut events: EventReader<AssetEvent<Image>>,
+    mut events: MessageReader<AssetEvent<Image>>,
     videos: Query<(&MeshMaterial3d<StandardMaterial>, &VideoImage)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -160,17 +162,17 @@ fn handle_image_resize(
     }
 }
 
-fn ended_observer(trigger: Trigger<ListenerEvent<events::Ended>>, mut commands: Commands) {
-    commands.entity(trigger.target()).insert(Disabled);
+fn ended_observer(listener_event: On<ListenerEvent<events::Ended>>, mut commands: Commands) {
+    commands.entity(listener_event.entity).insert(Disabled);
 }
 
 fn timeupdate_observer(
-    trigger: Trigger<ListenerEvent<TimeUpdate>>,
+    listener_event: On<ListenerEvent<TimeUpdate>>,
     mut web_videos: Query<&mut Transform, With<WebVideo>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(element) = registry.element(trigger.asset_id())
-        && let Ok(mut transform) = web_videos.get_mut(trigger.target())
+    if let Some(element) = registry.element(listener_event.asset_id())
+        && let Ok(mut transform) = web_videos.get_mut(listener_event.entity)
     {
         transform.translation.z =
             ((element.current_time() / element.duration()) * (DISTANCE - 2.0) as f64) as f32;

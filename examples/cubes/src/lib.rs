@@ -18,7 +18,7 @@ pub fn main() {
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                resolution: WindowResolution::new(800.0, 600.0),
+                resolution: WindowResolution::new(800, 600),
                 ..default()
             }),
             ..default()
@@ -181,11 +181,11 @@ fn setup(
 }
 
 fn scale_spincube_listener(
-    trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    listener_event: On<ListenerEvent<events::LoadedMetadata>>,
     mut transform: Single<&mut Transform, With<SpinCube>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(element) = registry.element(trigger.asset_id()) {
+    if let Some(element) = registry.element(listener_event.asset_id()) {
         let width = element.video_width();
         let height = element.video_height();
         let aspect = width as f32 / height as f32;
@@ -207,11 +207,11 @@ fn new_decal_material(image: Handle<Image>) -> ForwardDecalMaterial<StandardMate
 }
 
 fn scale_decals_listener<V: Component>(
-    trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    listener_event: On<ListenerEvent<events::LoadedMetadata>>,
     mut decals: Query<&mut Transform, (With<ForwardDecal>, With<V>)>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(element) = registry.element(trigger.asset_id()) {
+    if let Some(element) = registry.element(listener_event.asset_id()) {
         let width = element.video_width();
         let height = element.video_height();
         for mut transform in &mut decals {

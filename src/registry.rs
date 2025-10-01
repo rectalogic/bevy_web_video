@@ -1,4 +1,4 @@
-use crate::{EventSender, EventType, ListenerEvent, VideoElement, events};
+use crate::{EventSender, EventType, VideoElement, event::ListenerEventInternal, events};
 use bevy::prelude::*;
 use gloo_events::EventListener;
 use std::collections::HashMap;
@@ -48,22 +48,22 @@ pub fn plugin(app: &mut App) {
 pub struct VideoElementRegistry {
     elements: HashMap<AssetId<VideoElement>, RegisteredElement>,
     document: web_sys::Document,
-    tx_loadedmetadata: crossbeam_channel::Sender<ListenerEvent<events::LoadedMetadata>>,
-    tx_canplay: crossbeam_channel::Sender<ListenerEvent<events::CanPlay>>,
-    tx_resize: crossbeam_channel::Sender<ListenerEvent<events::Resize>>,
-    tx_playing: crossbeam_channel::Sender<ListenerEvent<events::Playing>>,
-    tx_ended: crossbeam_channel::Sender<ListenerEvent<events::Ended>>,
-    tx_error: crossbeam_channel::Sender<ListenerEvent<events::Error>>,
+    tx_loadedmetadata: crossbeam_channel::Sender<ListenerEventInternal<events::LoadedMetadata>>,
+    tx_canplay: crossbeam_channel::Sender<ListenerEventInternal<events::CanPlay>>,
+    tx_resize: crossbeam_channel::Sender<ListenerEventInternal<events::Resize>>,
+    tx_playing: crossbeam_channel::Sender<ListenerEventInternal<events::Playing>>,
+    tx_ended: crossbeam_channel::Sender<ListenerEventInternal<events::Ended>>,
+    tx_error: crossbeam_channel::Sender<ListenerEventInternal<events::Error>>,
 }
 
 impl VideoElementRegistry {
     fn new(
-        tx_loadedmetadata: crossbeam_channel::Sender<ListenerEvent<events::LoadedMetadata>>,
-        tx_canplay: crossbeam_channel::Sender<ListenerEvent<events::CanPlay>>,
-        tx_resize: crossbeam_channel::Sender<ListenerEvent<events::Resize>>,
-        tx_playing: crossbeam_channel::Sender<ListenerEvent<events::Playing>>,
-        tx_ended: crossbeam_channel::Sender<ListenerEvent<events::Ended>>,
-        tx_error: crossbeam_channel::Sender<ListenerEvent<events::Error>>,
+        tx_loadedmetadata: crossbeam_channel::Sender<ListenerEventInternal<events::LoadedMetadata>>,
+        tx_canplay: crossbeam_channel::Sender<ListenerEventInternal<events::CanPlay>>,
+        tx_resize: crossbeam_channel::Sender<ListenerEventInternal<events::Resize>>,
+        tx_playing: crossbeam_channel::Sender<ListenerEventInternal<events::Playing>>,
+        tx_ended: crossbeam_channel::Sender<ListenerEventInternal<events::Ended>>,
+        tx_error: crossbeam_channel::Sender<ListenerEventInternal<events::Error>>,
     ) -> Self {
         Self {
             elements: HashMap::default(),
@@ -151,12 +151,12 @@ impl VideoElementRegistry {
     }
 
     fn new_internal_listener<E: EventType>(
-        tx: crossbeam_channel::Sender<ListenerEvent<E>>,
+        tx: crossbeam_channel::Sender<ListenerEventInternal<E>>,
         asset_id: AssetId<VideoElement>,
         element: &web_sys::HtmlVideoElement,
     ) -> EventListener {
         EventListener::new(element, E::EVENT_NAME, move |_event: &web_sys::Event| {
-            if let Err(err) = tx.send(ListenerEvent::<E>::new(asset_id, None)) {
+            if let Err(err) = tx.send(ListenerEventInternal::<E>::new(asset_id, None)) {
                 warn!("Failed to fire video event {}: {err:?}", E::EVENT_NAME);
             };
         })

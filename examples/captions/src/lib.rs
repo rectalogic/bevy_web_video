@@ -20,7 +20,7 @@ pub fn main() {
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                resolution: WindowResolution::new(800.0, 600.0),
+                resolution: WindowResolution::new(800, 600),
                 ..default()
             }),
             ..default()
@@ -167,11 +167,11 @@ fn setup(
 }
 
 fn loadedmetadata_observer(
-    trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    listener_event: On<ListenerEvent<events::LoadedMetadata>>,
     mut transform: Single<&mut Transform, With<Video>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(element) = registry.element(trigger.asset_id()) {
+    if let Some(element) = registry.element(listener_event.asset_id()) {
         let width = element.video_width();
         let height = element.video_height();
         let aspect = width as f32 / height as f32;
@@ -181,11 +181,11 @@ fn loadedmetadata_observer(
 }
 
 fn cuechange_observer(
-    trigger: Trigger<ListenerEvent<CueChange>>,
+    listener_event: On<ListenerEvent<CueChange>>,
     mut text: Single<&mut Text, With<Caption>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    if let Some(element) = registry.element(trigger.asset_id())
+    if let Some(element) = registry.element(listener_event.asset_id())
         && let Some(text_tracks) = element.text_tracks()
         && let Some(track) = text_tracks.get(0)
         && let Some(cues) = track.active_cues()

@@ -1,9 +1,9 @@
 use crate::{
     VideoElementRegistry,
-    event::{ListenerEvent, events},
+    event::{ListenerAssetEvent, events},
 };
 use bevy::{
-    asset::{AssetEvents, RenderAssetUsages},
+    asset::{AssetEventSystems, RenderAssetUsages},
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
 };
@@ -18,7 +18,7 @@ pub fn plugin(app: &mut App) {
         .add_observer(on_playing)
         .add_observer(on_ended)
         .add_systems(Update, mark_assets_modified)
-        .add_systems(PostUpdate, remove_unused_assets.after(AssetEvents));
+        .add_systems(PostUpdate, remove_unused_assets.after(AssetEventSystems));
 }
 
 #[derive(Asset, Clone, Debug, TypePath)]
@@ -60,7 +60,8 @@ impl VideoElementAssetsExt for Assets<VideoElement> {
     ) -> (Handle<VideoElement>, web_sys::HtmlVideoElement) {
         let video_handle = self.reserve_handle();
         let video_element = VideoElement::new(target_image);
-        self.insert(&video_handle, video_element);
+        self.insert(&video_handle, video_element)
+            .expect("insert video");
 
         let html_video_element = registry
             .document()
@@ -83,7 +84,7 @@ fn mark_assets_modified(mut video_elements: ResMut<Assets<VideoElement>>) {
 }
 
 fn remove_unused_assets(
-    mut events: EventReader<AssetEvent<VideoElement>>,
+    mut events: MessageReader<AssetEvent<VideoElement>>,
     mut registry: NonSendMut<VideoElementRegistry>,
 ) {
     for event in events.read() {
@@ -128,18 +129,19 @@ fn resize_image(
         RenderAssetUsages::default(),
     );
     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-    images.insert(video_element.target_image_id(), image);
+    images
+        .insert(video_element.target_image_id(), image)
+        .expect("insert image");
 }
 
 fn on_loadedmetadata(
-    trigger: Trigger<ListenerEvent<events::LoadedMetadata>>,
+    listener_event: On<ListenerAssetEvent<events::LoadedMetadata>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    let asset_id = trigger.asset_id();
-    if trigger.target() == Entity::PLACEHOLDER
-        && let Some(video_element) = video_elements.get(asset_id)
+    let asset_id = listener_event.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -147,14 +149,13 @@ fn on_loadedmetadata(
 }
 
 fn on_canplay(
-    trigger: Trigger<ListenerEvent<events::CanPlay>>,
+    listener_event: On<ListenerAssetEvent<events::CanPlay>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    let asset_id = trigger.asset_id();
-    if trigger.target() == Entity::PLACEHOLDER
-        && let Some(video_element) = video_elements.get(asset_id)
+    let asset_id = listener_event.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -162,14 +163,13 @@ fn on_canplay(
 }
 
 fn on_resize(
-    trigger: Trigger<ListenerEvent<events::Resize>>,
+    listener_event: On<ListenerAssetEvent<events::Resize>>,
     video_elements: Res<Assets<VideoElement>>,
     mut images: ResMut<Assets<Image>>,
     registry: NonSend<VideoElementRegistry>,
 ) {
-    let asset_id = trigger.asset_id();
-    if trigger.target() == Entity::PLACEHOLDER
-        && let Some(video_element) = video_elements.get(asset_id)
+    let asset_id = listener_event.asset_id();
+    if let Some(video_element) = video_elements.get(asset_id)
         && let Some(element) = registry.element(asset_id)
     {
         resize_image(video_element, element, &mut images);
@@ -177,33 +177,29 @@ fn on_resize(
 }
 
 fn on_error(
-    trigger: Trigger<ListenerEvent<events::Error>>,
+    listener_event: On<ListenerAssetEvent<events::Error>>,
     video_elements: Res<Assets<VideoElement>>,
 ) {
-    let asset_id = trigger.asset_id();
-    if trigger.target() == Entity::PLACEHOLDER && video_elements.get(asset_id).is_none() {
+    let asset_id = listener_event.asset_id();
+    if video_elements.get(asset_id).is_none() {
         warn!("Video asset {:?} failed to load with error", asset_id);
     };
 }
 
 fn on_playing(
-    trigger: Trigger<ListenerEvent<events::Playing>>,
+    listener_event: On<ListenerAssetEvent<events::Playing>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    if trigger.target() == Entity::PLACEHOLDER
-        && let Some(video_element) = video_elements.get_mut(trigger.asset_id())
-    {
+    if let Some(video_element) = video_elements.get_mut(listener_event.asset_id()) {
         video_element.renderable = true;
     };
 }
 
 fn on_ended(
-    trigger: Trigger<ListenerEvent<events::Ended>>,
+    listener_event: On<ListenerAssetEvent<events::Ended>>,
     mut video_elements: ResMut<Assets<VideoElement>>,
 ) {
-    if trigger.target() == Entity::PLACEHOLDER
-        && let Some(video_element) = video_elements.get_mut(trigger.asset_id())
-    {
+    if let Some(video_element) = video_elements.get_mut(listener_event.asset_id()) {
         video_element.renderable = false;
     };
 }

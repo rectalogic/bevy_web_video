@@ -26,6 +26,8 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build
+        env:
+          RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
         run: |
           mkdir -p examples/web/simple
           cp examples/simple/index.html examples/web/simple
