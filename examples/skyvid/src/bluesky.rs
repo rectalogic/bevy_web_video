@@ -3,7 +3,7 @@ use atrium_api::{
     types::{LimitedNonZeroU8, Union},
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
-use bevy::{asset::AsAssetId, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool};
+use bevy::{asset::AssetEvents, ecs::entity_disabling::Disabled, prelude::*, tasks::IoTaskPool};
 use bevy_web_video::{
     EventListenerAppExt, EventSender, ListenerEvent, VideoElement, VideoElementAssetsExt,
     VideoElementRegistry, WebVideo, WebVideoError, events, new_event_type,
@@ -14,7 +14,8 @@ const DISTANCE: f32 = 5.0;
 pub fn plugin(app: &mut App) {
     app.add_listener_event::<TimeUpdate>()
         .add_systems(Startup, setup)
-        .add_systems(Update, update);
+        .add_systems(Update, update)
+        .add_systems(PostUpdate, handle_image_resize.after(AssetEvents));
 }
 
 new_event_type!(TimeUpdate, "timeupdate");
@@ -30,6 +31,9 @@ struct VideoReceiver(async_channel::Receiver<Video>);
 
 #[derive(Component)]
 struct InitialPosition(Vec3);
+
+#[derive(Component)]
+struct VideoImage(Handle<Image>);
 
 #[allow(clippy::too_many_arguments)]
 fn setup(
@@ -51,7 +55,6 @@ fn setup(
         .detach();
 
     commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 0.0, DISTANCE)));
-    commands.spawn(DirectionalLight::default());
 
     let plane = meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.5)));
     for pos in [
@@ -68,8 +71,13 @@ fn setup(
                 Disabled,
                 InitialPosition(pos),
                 WebVideo::new(video_element_handle),
+                VideoImage(video_image.clone()),
                 Mesh3d(plane.clone()),
-                MeshMaterial3d(materials.add(video_image)),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color_texture: Some(video_image),
+                    unlit: true,
+                    ..default()
+                })),
                 Transform::from_translation(pos),
             ))
             .observe(ended_observer)
@@ -135,6 +143,22 @@ async fn send_videos(tx: async_channel::Sender<Video>) {
     }
 }
 
+fn handle_image_resize(
+    mut events: EventReader<AssetEvent<Image>>,
+    videos: Query<(&MeshMaterial3d<StandardMaterial>, &VideoImage)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for event in events.read() {
+        if let AssetEvent::Modified { id: asset_id } = *event {
+            for (MeshMaterial3d(material_handle), VideoImage(image_handle)) in videos {
+                if asset_id == image_handle.id() {
+                    materials.get_mut(material_handle);
+                }
+            }
+        }
+    }
+}
+
 fn ended_observer(trigger: Trigger<ListenerEvent<events::Ended>>, mut commands: Commands) {
     commands.entity(trigger.target()).insert(Disabled);
 }
@@ -148,7 +172,7 @@ fn timeupdate_observer(
         && let Ok(mut transform) = web_videos.get_mut(trigger.target())
     {
         transform.translation.z =
-            ((element.current_time() / element.duration()) * DISTANCE as f64) as f32;
+            ((element.current_time() / element.duration()) * (DISTANCE - 2.0) as f64) as f32;
     }
 }
 

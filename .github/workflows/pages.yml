@@ -36,6 +36,9 @@ jobs:
           mkdir -p examples/web/captions
           cp examples/captions/index.html examples/web/captions
           wasm-pack build --target web examples/captions --out-dir ../web/captions/pkg
+          mkdir -p examples/web/skyvid
+          cp examples/skyvid/index.html examples/web/skyvid
+          wasm-pack build --target web examples/skyvid --out-dir ../web/skyvid/pkg
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

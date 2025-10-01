@@ -82,7 +82,6 @@ fn mark_assets_modified(mut video_elements: ResMut<Assets<VideoElement>>) {
     video_elements.iter_mut().for_each(drop);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn remove_unused_assets(
     mut events: EventReader<AssetEvent<VideoElement>>,
     mut registry: NonSendMut<VideoElementRegistry>,
